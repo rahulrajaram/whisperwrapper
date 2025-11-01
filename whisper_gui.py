@@ -6,6 +6,7 @@ Whisper GUI - A minimal PyQt6 application for voice recording with history buffe
 import sys
 import json
 import os
+import signal
 import threading
 import subprocess
 from pathlib import Path
@@ -378,6 +379,15 @@ def main():
     app = QApplication(sys.argv)
     window = WhisperGUI()
     window.show()
+
+    # Handle Ctrl+C (SIGINT) to gracefully exit
+    def handle_sigint(signum, frame):
+        print("\n👋 Exiting...")
+        window.close()
+        app.quit()
+
+    signal.signal(signal.SIGINT, handle_sigint)
+
     sys.exit(app.exec())
 
 
