@@ -1,12 +1,12 @@
 # Core dependencies
 openai-whisper==20250625
 pyaudio==0.2.14
+pynput==1.8.1
 numpy==2.3.3
 PyQt6==6.10.0
 torch==2.9.0+cu129
 torchaudio==2.9.0+cu129
 torchvision==0.24.0+cu129
-pynput>=1.7.6
 
 # Additional dependencies required by core packages
 tqdm==4.67.1

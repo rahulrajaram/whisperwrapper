@@ -1,0 +1,9 @@
+#!/bin/bash
+# Launch Whisper Hotkey Daemon
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+export PYTHONPATH="$PROJECT_DIR/src:$PYTHONPATH"
+
+exec "$PROJECT_DIR/venv/bin/python3" "$PROJECT_DIR/src/whisper_app/hotkey_daemon.py" "$@"

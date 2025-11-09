@@ -1,12 +1,12 @@
 [Unit]
-Description=Whisper Global Hotkey Daemon - Monitors CTRL+ALT+SHIFT+R for recording toggle
+Description=Whisper Global Hotkey Daemon - Monitors Ctrl+Alt+Shift+R for recording toggle
 After=graphical-session-started.target whisper-gui.service
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
 WorkingDirectory=/home/rahul/Documents/whisper
-ExecStart=/home/rahul/Documents/whisper/venv/bin/python3 /home/rahul/Documents/whisper/whisper_hotkey_daemon.py
+ExecStart=/home/rahul/Documents/whisper/venv/bin/python3 /home/rahul/Documents/whisper/src/whisper_app/hotkey_daemon.py
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -14,8 +14,6 @@ StandardError=journal
 Environment="PATH=/home/rahul/Documents/whisper/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="PYTHONPATH=/home/rahul/Documents/whisper/src"
 Environment="PYTHONUNBUFFERED=1"
-Environment="DISPLAY=:1"
-Environment="XAUTHORITY=%h/.Xauthority"
 
 [Install]
 WantedBy=graphical-session.target
