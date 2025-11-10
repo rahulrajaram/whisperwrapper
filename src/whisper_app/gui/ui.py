@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor
 from PyQt6.QtWidgets import QHeaderView
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -246,14 +246,52 @@ def build_main_interface(gui: "WhisperGUI") -> None:
     gui.statusBar().showMessage("Ready")
 
 
+def _create_colored_icon(color: str, shape: str = "circle") -> QIcon:
+    """Create a colored icon for the system tray.
+
+    Args:
+        color: Color name or hex code (e.g., 'green', '#00FF00')
+        shape: Icon shape - 'circle', 'play', or 'record'
+
+    Returns:
+        QIcon with the specified color and shape
+    """
+    size = 64
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(0, 0, 0, 0))  # Transparent background
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QColor(0, 0, 0, 0))
+    painter.setBrush(QColor(color))
+
+    if shape == "circle":
+        # Draw filled circle
+        painter.drawEllipse(8, 8, 48, 48)
+    elif shape == "play":
+        # Draw play triangle pointing right
+        from PyQt6.QtCore import QPointF
+        points = [
+            QPointF(16, 12),
+            QPointF(16, 52),
+            QPointF(52, 32)
+        ]
+        painter.drawPolygon(points)
+    elif shape == "record":
+        # Draw record circle (same as circle)
+        painter.drawEllipse(8, 8, 48, 48)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
 def configure_tray(gui: "WhisperGUI") -> None:
     gui.tray_icon = QSystemTrayIcon(gui)
-    try:
-        gui.tray_icon_green = QIcon.fromTheme("media-playback-start")
-        gui.tray_icon_red = QIcon.fromTheme("media-record")
-        gui.tray_icon_yellow = QIcon.fromTheme("media-playback-pause")
-    except Exception:  # pragma: no cover - depends on desktop env
-        gui.tray_icon_green = gui.tray_icon_red = gui.tray_icon_yellow = None
+
+    # Create custom colored icons
+    gui.tray_icon_green = _create_colored_icon("#00AA00", "play")  # Green play button
+    gui.tray_icon_red = _create_colored_icon("#CC0000", "record")   # Red circle (recording)
+    gui.tray_icon_orange = _create_colored_icon("#FF8800", "circle")  # Orange circle (stopped after recording)
 
     gui._set_tray_icon_green()
     tray_menu = QMenu()

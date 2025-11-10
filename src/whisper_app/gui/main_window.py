@@ -174,10 +174,10 @@ class WhisperGUI(QMainWindow):
         if self.tray_icon_red:
             self.tray_icon.setIcon(self.tray_icon_red)
 
-    def _set_tray_icon_yellow(self):
-        """Change tray icon to yellow (pause/transcribing state)"""
-        if self.tray_icon_yellow:
-            self.tray_icon.setIcon(self.tray_icon_yellow)
+    def _set_tray_icon_orange(self):
+        """Change tray icon to orange (stopped/transcribing state)"""
+        if self.tray_icon_orange:
+            self.tray_icon.setIcon(self.tray_icon_orange)
 
     def _set_tray_icon_green(self):
         """Change tray icon to green (ready state)"""
@@ -369,9 +369,9 @@ class WhisperGUI(QMainWindow):
         self.status_label.setText(status)
         self.statusBar().showMessage(status)
 
-        # Change icon to yellow when recording pauses and transcription begins
+        # Change icon to orange when recording pauses and transcription begins
         if "Stopping recording" in status or "processing audio" in status.lower():
-            self._set_tray_icon_yellow()
+            self._set_tray_icon_orange()
 
     def refresh_history_table(self):
         """Refresh the history table display"""
