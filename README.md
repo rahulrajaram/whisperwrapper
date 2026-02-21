@@ -1,10 +1,10 @@
-# Whisper GUI
+# Whisper Wrapper
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/downloads/)
 [![Linux Only](https://img.shields.io/badge/Platform-Linux-lightgrey)](https://kernel.org)
 
-A PyQt6 desktop application for speech-to-text transcription using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (large-v3) with GPU acceleration, system tray integration, and systemd autostart.
+A speech-to-text toolkit wrapping [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (large-v3) with GPU acceleration. Includes a PyQt6 desktop GUI, a headless CLI, and a vocabulary manager for domain-specific transcription.
 
 > **Platform: Linux only.** This application depends on systemd, FIFO-based IPC, PyAudio/ALSA, and X11/XCB. It does not work on macOS or Windows.
 
