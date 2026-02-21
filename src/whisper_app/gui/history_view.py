@@ -27,8 +27,18 @@ class ClickableLabel(QLabel):
 
 def refresh_history_table(gui: "WhisperGUI") -> None:
     table = gui.history_table
-    history = gui.presenter.history
+
+    # Filter history by current project
+    history = gui.presenter.get_filtered_history()
     table.setRowCount(len(history))
+
+    # Enable context menu on table
+    table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    if not hasattr(gui, '_history_context_menu_connected'):
+        table.customContextMenuRequested.connect(
+            lambda pos: _show_recording_context_menu(gui, pos)
+        )
+        gui._history_context_menu_connected = True
 
     for row, item in enumerate(history):
         timestamp_item = QTableWidgetItem(item.get("timestamp", ""))
@@ -104,3 +114,89 @@ def refresh_history_table(gui: "WhisperGUI") -> None:
             table.setCellWidget(row, 3, lock_button)
 
     gui.statusBar().showMessage("History updated")
+
+
+def _show_recording_context_menu(gui: "WhisperGUI", position) -> None:
+    """Show context menu for recording operations."""
+    from PyQt6.QtWidgets import QMenu
+
+    table = gui.history_table
+    row = table.rowAt(position.y())
+    if row < 0:
+        return
+
+    menu = QMenu(gui)
+
+    # Copy action
+    copy_action = menu.addAction("📋 Copy to Project")
+    copy_action.triggered.connect(lambda: _copy_recording_to_project(gui, row))
+
+    # Move action
+    move_action = menu.addAction("➡️ Move to Project")
+    move_action.triggered.connect(lambda: _move_recording_to_project(gui, row))
+
+    # Delete action
+    delete_action = menu.addAction("🗑️ Delete")
+    delete_action.triggered.connect(lambda: gui.presenter.delete_history_item(row))
+
+    # Process with Claude action
+    process_action = menu.addAction("🤖 Process with Claude")
+    process_action.triggered.connect(lambda: _process_with_claude(gui, row))
+
+    menu.exec(table.viewport().mapToGlobal(position))
+
+
+def _copy_recording_to_project(gui: "WhisperGUI", row: int) -> None:
+    """Copy recording to another project."""
+    from PyQt6.QtWidgets import QInputDialog
+
+    projects = gui.presenter.project_manager.projects
+    project_names = [p.name for p in projects]
+
+    if not project_names:
+        return
+
+    project_name, ok = QInputDialog.getItem(
+        gui,
+        "Copy to Project",
+        "Select target project:",
+        project_names,
+        0,
+        False
+    )
+
+    if ok and project_name:
+        target_project = next((p for p in projects if p.name == project_name), None)
+        if target_project:
+            gui.presenter.copy_recording_to_project(row, target_project.id)
+
+
+def _move_recording_to_project(gui: "WhisperGUI", row: int) -> None:
+    """Move recording to another project."""
+    from PyQt6.QtWidgets import QInputDialog
+
+    projects = gui.presenter.project_manager.projects
+    project_names = [p.name for p in projects]
+
+    if not project_names:
+        return
+
+    project_name, ok = QInputDialog.getItem(
+        gui,
+        "Move to Project",
+        "Select target project:",
+        project_names,
+        0,
+        False
+    )
+
+    if ok and project_name:
+        target_project = next((p for p in projects if p.name == project_name), None)
+        if target_project:
+            gui.presenter.move_recording_to_project(row, target_project.id)
+
+
+def _process_with_claude(gui: "WhisperGUI", row: int) -> None:
+    """Process recording with Claude."""
+    gui.presenter.selected_row = row
+    gui.presenter.process_with_codex()

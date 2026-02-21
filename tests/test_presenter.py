@@ -10,6 +10,7 @@ import pytest
 
 from whisper_app.gui import presenter as presenter_module
 from whisper_app.gui.presenter import WhisperPresenter
+from whisper_app.gui.projects import ProjectManager
 
 
 class DummySignal:
@@ -136,10 +137,11 @@ def patch_presenter_dependencies(monkeypatch):
 
 
 @pytest.fixture
-def presenter_setup():
+def presenter_setup(tmp_path):
     controller = DummyController()
     storage = InMemoryStorage()
-    presenter = WhisperPresenter(controller, storage)
+    project_manager = ProjectManager(MagicMock(base_dir=tmp_path))
+    presenter = WhisperPresenter(controller, storage, project_manager)
     presenter._copy_text_to_clipboard = MagicMock(return_value=True)
     presenter._auto_paste = MagicMock()
     return presenter, controller, storage
@@ -194,12 +196,16 @@ def test_toggle_protection_and_delete_history(presenter_setup):
 
 def test_clear_history_retains_protected_items(presenter_setup):
     presenter, _, _ = presenter_setup
+    current_project = presenter.project_manager.current_project
     presenter.history = [
-        {"timestamp": "t1", "text": "alpha", "protected": True},
-        {"timestamp": "t2", "text": "beta", "protected": False},
+        {"timestamp": "t1", "text": "alpha", "protected": True, "project_id": current_project.id},
+        {"timestamp": "t2", "text": "beta", "protected": False, "project_id": current_project.id},
     ]
     presenter.clear_history()
-    assert presenter.history == [{"timestamp": "t1", "text": "alpha", "protected": True}]
+    # Should retain only the protected item from the current project
+    assert len(presenter.history) == 1
+    assert presenter.history[0]["text"] == "alpha"
+    assert presenter.history[0]["protected"] is True
 
 
 def test_copy_to_clipboard_uses_helper(presenter_setup):

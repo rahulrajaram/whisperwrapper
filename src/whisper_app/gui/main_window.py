@@ -43,6 +43,8 @@ from .actions import open_project_terminal, show_microphone_settings
 from .config import GUIStorageManager, SingletonLockError
 from .history_view import refresh_history_table as render_history_table
 from .presenter import WhisperPresenter
+from .project_sidebar import ProjectSidebar
+from .projects import ProjectManager
 from .ui import build_main_interface, configure_tray
 
 logger = logging.getLogger(__name__)
@@ -85,7 +87,12 @@ class WhisperGUI(QMainWindow):
 
         # History + presenter helpers
         self.storage = GUIStorageManager(self.runtime_config.paths)
-        self.presenter = WhisperPresenter(self.recording_controller, self.storage)
+        self.project_manager = ProjectManager(self.runtime_config.paths)
+        self.presenter = WhisperPresenter(
+            self.recording_controller,
+            self.storage,
+            self.project_manager
+        )
         self.presenter.recording_started.connect(self._on_presenter_recording_started)
         self.presenter.recording_finished.connect(self._on_presenter_recording_finished)
         self.presenter.recording_error.connect(self._on_presenter_error)
@@ -170,7 +177,23 @@ class WhisperGUI(QMainWindow):
 
     def setup_ui(self):
         """Create the user interface."""
+        # Build the main interface first
         build_main_interface(self)
+
+        # Create and integrate the project sidebar
+        self.project_sidebar = ProjectSidebar(self.presenter, self)
+        self.project_sidebar.project_selected.connect(self._on_project_selected)
+
+        # Wrap central widget with sidebar in a horizontal layout
+        original_central = self.centralWidget()
+        wrapper_widget = QWidget()
+        wrapper_layout = QHBoxLayout()
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(0)
+        wrapper_layout.addWidget(self.project_sidebar)
+        wrapper_layout.addWidget(original_central, 1)
+        wrapper_widget.setLayout(wrapper_layout)
+        self.setCentralWidget(wrapper_widget)
 
     def setup_tray(self):
         """Setup system tray icon and menu."""
@@ -400,6 +423,11 @@ class WhisperGUI(QMainWindow):
         # Change icon to orange when recording pauses and transcription begins
         if "Stopping recording" in status or "processing audio" in status.lower():
             self._set_tray_icon_orange()
+
+    def _on_project_selected(self, project_id: str) -> None:
+        """Handle project selection from sidebar."""
+        logger.debug(f"Project selected: {project_id}")
+        self.refresh_history_table()
 
     def refresh_history_table(self):
         """Refresh the history table display"""

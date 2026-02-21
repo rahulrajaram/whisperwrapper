@@ -12,6 +12,7 @@ from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 from ..controllers import WhisperRecordingController
 from .config import GUIStorageManager
+from .projects import ProjectManager
 from .workers import CodexWorker, RecordingWorker
 
 
@@ -34,14 +35,18 @@ class WhisperPresenter(QObject):
     codex_finished = pyqtSignal()
     codex_error = pyqtSignal(str)
 
+    projects_changed = pyqtSignal()
+
     def __init__(
         self,
         recording_controller: WhisperRecordingController,
         storage: GUIStorageManager,
+        project_manager: ProjectManager,
     ) -> None:
         super().__init__()
         self.recording_controller = recording_controller
         self.storage = storage
+        self.project_manager = project_manager
 
         self.history: List[dict] = self.storage.load_history() or []
         self.selected_row: Optional[int] = None
@@ -52,6 +57,9 @@ class WhisperPresenter(QObject):
 
         self._codex_thread: Optional[QThread] = None
         self._codex_worker: Optional[CodexWorker] = None
+
+        # Migrate existing recordings to default project if needed
+        self._migrate_recordings_to_projects()
 
     # ---------------------------------------------------------------------
     # Recording lifecycle
@@ -171,22 +179,46 @@ class WhisperPresenter(QObject):
         self.status_message.emit(f"🗑 Deleted: {text_preview}...")
 
     def clear_history(self) -> None:
-        protected_items = [item for item in self.history if item.get("protected", False)]
-        deleted_count = len(self.history) - len(protected_items)
-        self.history = protected_items
+        """Clear history for the current project only, preserving protected items."""
+        current_project = self.project_manager.current_project
+        if not current_project:
+            self.status_message.emit("❌ No project selected")
+            return
+
+        # Separate items: keep protected items and items from other projects
+        project_id = current_project.id
+        items_to_keep = [
+            item
+            for item in self.history
+            if item.get("protected", False) or item.get("project_id") != project_id
+        ]
+
+        # Count what we're deleting
+        deleted_count = len(self.history) - len(items_to_keep)
+
+        self.history = items_to_keep
         self._save_history()
         self.selected_row = None
         self.history_changed.emit()
 
         if deleted_count > 0:
-            if protected_items:
+            protected_in_project = sum(
+                1
+                for item in self.history
+                if item.get("protected", False) and item.get("project_id") == project_id
+            )
+            if protected_in_project > 0:
                 self.status_message.emit(
-                    f"🗑 Deleted {deleted_count} items ({len(protected_items)} protected)"
+                    f"🗑 Deleted {deleted_count} items ({protected_in_project} protected in {current_project.name})"
                 )
             else:
-                self.status_message.emit("🗑 History cleared")
+                self.status_message.emit(
+                    f"🗑 {current_project.name} history cleared"
+                )
         else:
-            self.status_message.emit("🔒 All items are protected")
+            self.status_message.emit(
+                f"🔒 All items in {current_project.name} are protected"
+            )
 
     # ------------------------------------------------------------------
     # Codex processing
@@ -226,9 +258,19 @@ class WhisperPresenter(QObject):
     def _on_recording_result(self, transcription: str) -> None:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         transcription_text = transcription.strip()
+
+        # Get current project ID
+        current_project = self.project_manager.current_project
+        project_id = current_project.id if current_project else None
+
         self.history.insert(
             0,
-            {"timestamp": timestamp, "text": transcription_text, "protected": False},
+            {
+                "timestamp": timestamp,
+                "text": transcription_text,
+                "protected": False,
+                "project_id": project_id,
+            },
         )
         self._save_history()
         self.selected_row = None
@@ -320,3 +362,87 @@ class WhisperPresenter(QObject):
             print("⚠️ All paste methods failed (window may not have focus)")
         except Exception as exc:
             print(f"⚠️ Auto-paste failed (non-critical): {exc}")
+
+    # ------------------------------------------------------------------
+    # Project management
+    # ------------------------------------------------------------------
+
+    def get_filtered_history(self, project_id: Optional[str] = None) -> List[dict]:
+        """Get history items filtered by project.
+
+        Args:
+            project_id: Project ID to filter by. If None, returns current project's items.
+
+        Returns:
+            List of history items for the specified project
+        """
+        if project_id is None:
+            current_project = self.project_manager.current_project
+            project_id = current_project.id if current_project else None
+
+        if project_id is None:
+            return self.history
+
+        return [item for item in self.history if item.get("project_id") == project_id]
+
+    def move_recording_to_project(self, row: int, target_project_id: str) -> None:
+        """Move a recording to a different project.
+
+        Args:
+            row: Index of the recording in history
+            target_project_id: ID of the target project
+        """
+        if row >= len(self.history):
+            return
+
+        if not self.project_manager.get_project(target_project_id):
+            self.status_message.emit("❌ Target project not found")
+            return
+
+        self.history[row]["project_id"] = target_project_id
+        self._save_history()
+        self.history_changed.emit()
+        self.status_message.emit("✅ Recording moved to project")
+
+    def copy_recording_to_project(self, row: int, target_project_id: str) -> None:
+        """Copy a recording to a different project.
+
+        Args:
+            row: Index of the recording in history
+            target_project_id: ID of the target project
+        """
+        if row >= len(self.history):
+            return
+
+        if not self.project_manager.get_project(target_project_id):
+            self.status_message.emit("❌ Target project not found")
+            return
+
+        # Create a copy of the recording with new project_id
+        original = self.history[row]
+        copy = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "text": original["text"],
+            "protected": original.get("protected", False),
+            "project_id": target_project_id,
+        }
+        self.history.insert(0, copy)
+        self._save_history()
+        self.history_changed.emit()
+        self.status_message.emit("✅ Recording copied to project")
+
+    def _migrate_recordings_to_projects(self) -> None:
+        """Migrate existing recordings without project_id to default project."""
+        default_project = self.project_manager.get_default_project()
+        if not default_project:
+            return
+
+        migrated = 0
+        for item in self.history:
+            if "project_id" not in item or item["project_id"] is None:
+                item["project_id"] = default_project.id
+                migrated += 1
+
+        if migrated > 0:
+            self._save_history()
+            print(f"Migrated {migrated} recordings to default project")

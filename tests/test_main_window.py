@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -38,6 +39,7 @@ class StubPresenter(QObject):
     codex_started = pyqtSignal()
     codex_finished = pyqtSignal()
     codex_error = pyqtSignal(str)
+    projects_changed = pyqtSignal()
 
     def __init__(self, *_args, **_kwargs):
         super().__init__()
@@ -45,6 +47,7 @@ class StubPresenter(QObject):
         self.history = [{"timestamp": "t1", "text": "alpha", "protected": False}]
         self.selected_row = None
         self.codex_calls = 0
+        self.project_manager = MagicMock()
 
     def start_recording(self):
         if self.is_recording:
@@ -69,6 +72,10 @@ class StubPresenter(QObject):
     def toggle_row_selection(self, row: int):
         self.selected_row = None if self.selected_row == row else row
         return self.selected_row
+
+    def get_filtered_history(self, project_id=None):
+        """Return history filtered by project (for testing, return all)."""
+        return self.history
 
     def shutdown(self):
         self.is_recording = False
@@ -122,6 +129,7 @@ def patched_window(monkeypatch, qt_app):
     monkeypatch.setattr(module, "HotkeyBackend", StubHotkeyBackend)
     monkeypatch.setattr(module, "WhisperRecordingController", lambda *_, **__: StubRecordingController())
     monkeypatch.setattr(module, "RecordingEventCallbacks", StubCallbacks)
+    monkeypatch.setattr(module, "ProjectManager", lambda *_, **__: MagicMock())
 
     class DummyController:
         pass

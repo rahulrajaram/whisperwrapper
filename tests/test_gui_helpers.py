@@ -43,6 +43,10 @@ class DummyPresenter:
     def toggle_protection(self, row: int):
         self.toggle_calls.append(row)
 
+    def get_filtered_history(self, project_id=None):
+        """Return history filtered by project (for testing, return all)."""
+        return self.history
+
 
 class DummyGUI:
     def __init__(self, presenter: DummyPresenter):
