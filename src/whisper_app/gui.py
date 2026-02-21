@@ -527,20 +527,54 @@ class WhisperGUI(QMainWindow):
         # Create tray icon
         self.tray_icon = QSystemTrayIcon(self)
 
+        # Store icon colors for later switching
+        self.tray_icon_green = None
+        self.tray_icon_red = None
+        self.tray_icon_yellow = None
+
         # Try to set an icon - use a simple emoji-like icon or fallback to text
         try:
             # Create a simple icon using app icon
             from PyQt6.QtGui import QPixmap, QPainter, QColor
-            pixmap = QPixmap(64, 64)
-            pixmap.fill(QColor(255, 255, 255, 0))  # Transparent background
-            painter = QPainter(pixmap)
+
+            # Green icon (ready state)
+            pixmap_green = QPixmap(64, 64)
+            pixmap_green.fill(QColor(255, 255, 255, 0))  # Transparent background
+            painter = QPainter(pixmap_green)
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             # Draw a simple microphone icon using circles and lines
             painter.setBrush(QColor(76, 175, 80))  # Green color
             painter.drawEllipse(16, 8, 32, 32)  # Mic circle
             painter.drawRect(26, 40, 12, 16)  # Mic stand
             painter.end()
-            self.tray_icon.setIcon(QIcon(pixmap))
+            self.tray_icon_green = QIcon(pixmap_green)
+
+            # Red icon (recording state)
+            pixmap_red = QPixmap(64, 64)
+            pixmap_red.fill(QColor(255, 255, 255, 0))  # Transparent background
+            painter = QPainter(pixmap_red)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            # Draw a simple microphone icon using circles and lines
+            painter.setBrush(QColor(244, 67, 54))  # Red color
+            painter.drawEllipse(16, 8, 32, 32)  # Mic circle
+            painter.drawRect(26, 40, 12, 16)  # Mic stand
+            painter.end()
+            self.tray_icon_red = QIcon(pixmap_red)
+
+            # Yellow icon (pause/transcribing state)
+            pixmap_yellow = QPixmap(64, 64)
+            pixmap_yellow.fill(QColor(255, 255, 255, 0))  # Transparent background
+            painter = QPainter(pixmap_yellow)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            # Draw a simple microphone icon using circles and lines
+            painter.setBrush(QColor(255, 193, 7))  # Yellow color (Material Design Amber)
+            painter.drawEllipse(16, 8, 32, 32)  # Mic circle
+            painter.drawRect(26, 40, 12, 16)  # Mic stand
+            painter.end()
+            self.tray_icon_yellow = QIcon(pixmap_yellow)
+
+            # Set initial green icon
+            self.tray_icon.setIcon(self.tray_icon_green)
         except:
             # Fallback: just use text
             pass
@@ -593,6 +627,21 @@ class WhisperGUI(QMainWindow):
         from PyQt6.QtWidgets import QSystemTrayIcon
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self.toggle_window()
+
+    def _set_tray_icon_red(self):
+        """Change tray icon to red (recording state)"""
+        if self.tray_icon_red:
+            self.tray_icon.setIcon(self.tray_icon_red)
+
+    def _set_tray_icon_yellow(self):
+        """Change tray icon to yellow (pause/transcribing state)"""
+        if self.tray_icon_yellow:
+            self.tray_icon.setIcon(self.tray_icon_yellow)
+
+    def _set_tray_icon_green(self):
+        """Change tray icon to green (ready state)"""
+        if self.tray_icon_green:
+            self.tray_icon.setIcon(self.tray_icon_green)
 
     def exit_app(self):
         """Exit the application completely"""
@@ -781,8 +830,9 @@ class WhisperGUI(QMainWindow):
         self.stop_button.setEnabled(True)
         self.status_label.setText("🎤 Recording... (Press Stop when done)")
         self.statusBar().showMessage("Recording in progress...")
-        # Update tray status
+        # Update tray status and icon
         self.tray_status.setText("🎤 Recording...")
+        self._set_tray_icon_red()  # Change icon to red when recording starts
 
         # Start recording in a worker thread
         self.recording_worker = RecordingWorker(self.whisper)
@@ -814,8 +864,9 @@ class WhisperGUI(QMainWindow):
         self.start_button.setStyleSheet(self.start_button_style_normal)
         self.start_button.setEnabled(True)
         self.stop_button.setStyleSheet(self.stop_button_style_inactive)
-        # Update tray status
+        # Update tray status and icon
         self.tray_status.setText("🎤 Ready")
+        self._set_tray_icon_green()  # Change icon back to green when transcription is done
         self.recording_thread.quit()
         self.recording_thread.wait()
 
@@ -853,6 +904,10 @@ class WhisperGUI(QMainWindow):
         """Handle status updates from recording worker"""
         self.status_label.setText(status)
         self.statusBar().showMessage(status)
+
+        # Change icon to yellow when recording pauses and transcription begins
+        if "Stopping recording" in status or "processing audio" in status.lower():
+            self._set_tray_icon_yellow()
 
     def refresh_history_table(self):
         """Refresh the history table display"""
