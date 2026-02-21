@@ -53,5 +53,11 @@ models/
 # Exception: Track application asset files
 !assets/*.mp3
 
+# Test / coverage artifacts
+.coverage
+htmlcov/
+.pymon
+.whisper_test.log
+
 # Config files with sensitive data
 .whisper_config.json

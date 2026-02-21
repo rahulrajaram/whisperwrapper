@@ -2,449 +2,225 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/downloads/)
-[![CUDA Support](https://img.shields.io/badge/CUDA-12.9-green)](https://developer.nvidia.com/cuda-toolkit)
+[![Linux Only](https://img.shields.io/badge/Platform-Linux-lightgrey)](https://kernel.org)
 
-A sleek PyQt6 desktop application for real-time speech-to-text transcription with GPU acceleration, system tray integration, and AI-powered text processing.
+A PyQt6 desktop application for speech-to-text transcription using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (large-v3) with GPU acceleration, system tray integration, and systemd autostart.
+
+> **Platform: Linux only.** This application depends on systemd, FIFO-based IPC, PyAudio/ALSA, and X11/XCB. It does not work on macOS or Windows.
 
 ## Features
 
-🎤 **Speech-to-Text Transcription**
-- Real-time transcription using OpenAI's Whisper model
-- GPU acceleration (CUDA) for fast processing
-- CPU fallback for systems without NVIDIA GPU
+- **Speech-to-text** using faster-whisper large-v3 (best Whisper model, 4-6x faster than openai-whisper via CTranslate2)
+- **GPU acceleration** with CUDA float16 (~4 GB VRAM), automatic CPU fallback with int8 quantization
+- **PyQt6 GUI** with system tray icon, recording controls, transcription history, and click-to-copy
+- **Systemd integration** for autostart on login
+- **Keyboard shortcut** via FIFO IPC — bind any desktop shortcut to toggle recording (Wayland-compatible)
+- **Claude integration** for AI-powered text refinement and keyword highlighting
 
-🧠 **AI Text Processing**
-- Claude integration for intelligent text refinement
-- Automatic keyword highlighting
-- Typo correction and grammar improvement
+## Requirements
 
-📊 **User-Friendly GUI**
-- PyQt6 desktop application with system tray integration
-- Clean interface for recording and managing transcriptions
-- Real-time transcription history with timestamps
-- Click-to-copy functionality for quick workflow
+| | Minimum | Recommended |
+|---|---|---|
+| OS | Linux (Debian/Ubuntu, Fedora, Arch) | Debian 12+, Ubuntu 22.04+ |
+| Python | 3.8 | 3.11+ |
+| RAM | 4 GB | 8 GB+ |
+| VRAM (GPU) | 4 GB (NVIDIA) | 6 GB+ |
+| Disk | 5 GB (model download) | 10 GB |
 
-⚙️ **Advanced Features**
-- Microphone device selection and configuration
-- Persistent history storage
-- System tray icon with status indicators
-- Automatic startup via systemd user service
-- Multi-architecture IPC (Inter-Process Communication)
-- Cross-desktop compatibility (KDE, GNOME, Wayland)
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.8 or higher
-- pip package manager
-- PyAudio system library
-- (Optional) NVIDIA GPU with CUDA support for faster transcription
-
-### Installation
-
-#### 1. Clone the Repository
+System packages needed:
 
 ```bash
-git clone https://github.com/yourusername/whisper-gui.git
-cd whisper-gui
+# Debian/Ubuntu
+sudo apt install python3-dev portaudio19-dev
+
+# Fedora
+sudo dnf install python3-devel portaudio-devel
 ```
 
-#### 2. Create Virtual Environment
+## Installation
 
 ```bash
+git clone https://github.com/rahulrajaram/whisper-app.git
+cd whisper-app
 python3 -m venv venv
 source venv/bin/activate
-```
-
-#### 3. Install Dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-For **development**, also install dev dependencies:
+The first run will download the large-v3 model (~3 GB) from HuggingFace. This happens once.
+
+### Quick test
 
 ```bash
-pip install -e ".[dev]"
-```
-
-#### 4. Run the Application
-
-```bash
+source venv/bin/activate
 python -m whisper_app
 ```
 
-Or use the entry point:
+## Systemd Setup (Recommended)
 
-```bash
-whisper-gui
-```
-
-### System Tray Setup (Linux/KDE)
-
-For automatic startup and system tray integration:
+The setup script creates a virtual environment, installs dependencies, and configures a systemd user service that starts the GUI on login.
 
 ```bash
 ./scripts/setup_venv_systemd.sh
 ```
 
-This will:
-- Set up systemd user services
-- Configure desktop shortcuts
-- Enable automatic startup on login
+Then start it immediately:
+
+```bash
+systemctl --user start whisper-gui
+```
+
+### Managing the service
+
+```bash
+systemctl --user status whisper-gui     # Check status
+journalctl --user -u whisper-gui -f     # View logs
+systemctl --user restart whisper-gui    # Restart after code changes
+systemctl --user stop whisper-gui       # Stop
+systemctl --user disable whisper-gui    # Disable autostart
+```
+
+## Keyboard Shortcut Setup
+
+Recording is controlled via the `whisper-recording-toggle` script, which communicates with the running GUI through a FIFO pipe. This approach works on both X11 and Wayland.
+
+### KDE Plasma
+
+1. Open **System Settings > Shortcuts > Custom Shortcuts**
+2. Add a new **Global Shortcut > Command/URL**
+3. Set the trigger to your preferred key combo (e.g. `Ctrl+Alt+Shift+R`)
+4. Set the command to:
+   ```
+   /path/to/whisper-app/scripts/whisper-recording-toggle toggle
+   ```
+
+### GNOME
+
+```bash
+gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings \
+  "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/whisper/']"
+
+gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/whisper/ \
+  name 'Whisper Toggle' \
+  command '/path/to/whisper-app/scripts/whisper-recording-toggle toggle' \
+  binding '<Ctrl><Alt><Shift>r'
+```
+
+### Other desktops
+
+Any mechanism that can run a shell command on a keypress will work. Point it at:
+
+```
+/path/to/whisper-app/scripts/whisper-recording-toggle toggle
+```
+
+The toggle script also supports `start`, `stop`, and `status` subcommands.
 
 ## Usage
 
-### Recording
+1. **Start recording**: Press your keyboard shortcut or click the record button in the GUI
+2. **Speak**: Audio is captured via your selected microphone
+3. **Stop recording**: Press the shortcut again or click stop
+4. **View result**: Transcription appears in the history table — click any row to copy to clipboard
 
-1. **Start Recording**: Click the ▶ button (or use keyboard shortcut if configured)
-2. **Speak**: Your voice is recorded and processed by Whisper
-3. **Stop Recording**: Click the ⏹ button
-4. **View Result**: Transcription appears in history list
+### Microphone selection
 
-### Text Processing with Claude
+On first run you will be prompted to select a microphone. To reconfigure later:
 
-1. **Select Text**: Click any transcription in the history
-2. **Process**: Click the ✨ button to enhance with Claude
-3. **View Result**: Keywords are highlighted, typos are fixed
-4. **Copy**: Click to copy to clipboard
-
-### Keyboard Shortcuts
-
-- **Hotkey Recording** (Configurable): Triple-Ctrl to toggle recording
-- **Copy to Clipboard**: Click any result to copy
+```bash
+rm ~/.whisper/config
+systemctl --user restart whisper-gui
+```
 
 ## Architecture
 
 ```
-whisper-gui/
-├── src/whisper_app/           # Main source code
-│   ├── gui.py                 # PyQt6 GUI implementation
-│   ├── cli.py                 # Whisper engine and recording logic
-│   ├── ipc_controller.py      # Inter-process communication base
-│   ├── fifo_controller.py     # FIFO-based IPC for hotkey events
-│   └── dbus_controller.py     # D-Bus IPC alternative
-├── config/
-│   ├── systemd/               # Systemd service files
-│   └── desktop/               # Desktop shortcuts
-├── scripts/                   # Setup and utility scripts
-├── docs/                      # Comprehensive documentation
-├── tests/                     # Test suite
-├── requirements.txt           # Python dependencies (pinned versions)
-└── pyproject.toml            # Project metadata and build config
+whisper-app/
+├── src/whisper_app/
+│   ├── gui/                  # PyQt6 GUI (main_window, presenter, history, workers)
+│   ├── cli.py                # Headless CLI mode
+│   ├── config.py             # Runtime configuration (model, device, hotkeys)
+│   ├── controllers/          # Recording controller (start/stop/toggle)
+│   ├── services/             # TranscriptionService (faster-whisper), AudioInput, RecordingSession
+│   ├── hotkeys/              # Pynput-based hotkey backend (disabled by default)
+│   ├── fifo_controller.py    # FIFO-based IPC for external shortcut commands
+│   ├── dbus_controller.py    # D-Bus IPC (with FIFO fallback)
+│   └── command_bus.py        # Command dispatch (toggle/start/stop)
+├── config/systemd/           # Service file template
+├── scripts/
+│   ├── setup_venv_systemd.sh # One-command setup
+│   └── whisper-recording-toggle  # CLI to control recording via FIFO
+└── tests/                    # Test suite (pytest)
 ```
 
-### Key Components
+### How recording control works
 
-**gui.py** - PyQt6 desktop interface with:
-- Main window with recording controls
-- History table with transcriptions
-- System tray integration
-- Thread workers for non-blocking operations
+```
+KDE/GNOME shortcut
+  -> whisper-recording-toggle toggle
+    -> writes "toggle" to ~/.whisper/control.fifo
+      -> FifoController reads it
+        -> CommandBus dispatches to GUI
+          -> start or stop recording
+```
 
-**cli.py** - Whisper engine with:
-- Audio recording using PyAudio
-- Whisper model inference (CPU/GPU)
-- Audio configuration management
-- Microphone device selection
+## GPU / CUDA
 
-**ipc_controller.py** - Communication between processes:
-- Base class for inter-process messaging
-- Handles hotkey/backend + shortcut commands via FIFO
-- Clean abstraction for different IPC methods
-
-**fifo_controller.py** - FIFO-based IPC:
-- Reliable message passing for hotkey events
-- Wayland-compatible (doesn't rely on X11)
-- Graceful error handling
-
-## Configuration
-
-### Microphone Selection
-
-On first run, you'll be prompted to select your microphone. To reconfigure:
+The app auto-detects CUDA. To verify:
 
 ```bash
-rm ~/.whisper/config
-python -m whisper_app
+python3 -c "import torch; print('CUDA:', torch.cuda.is_available())"
+nvidia-smi  # Should show ~4 GB used when model is loaded
 ```
 
-### GPU/CUDA Setup
+If CUDA is unavailable, the app falls back to CPU with int8 quantization (slower but functional).
 
-The app automatically detects CUDA availability. To verify:
+## Limitations
 
-```bash
-python3 -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-```
-
-For CUDA installation, see [CUDA Installation Guide](https://developer.nvidia.com/cuda-downloads).
-
-### Whisper Model
-
-The app uses the "medium" Whisper model by default. To use a different model, modify `cli.py:34`:
-
-```python
-self.model = whisper.load_model("base", device=self.device)  # Options: tiny, base, small, medium, large
-```
+- **Linux only** — depends on systemd, FIFO IPC, ALSA/PulseAudio, and X11/XCB. No macOS or Windows support.
+- **NVIDIA GPU recommended** — CPU inference works but is significantly slower (~10-30x for large-v3).
+- **First startup is slow** — the large-v3 model (~3 GB) must be downloaded once from HuggingFace, and loading it into GPU memory takes 30-60 seconds on each start.
+- **Single instance** — only one GUI process should run at a time (enforced via `~/.whisper/app.lock`).
 
 ## Troubleshooting
 
-### Application Won't Start
-
-**Check service status:**
+**Service won't start:**
 ```bash
-systemctl --user status whisper-gui
 journalctl --user -u whisper-gui -n 50
+# Common: ModuleNotFoundError — run ./scripts/setup_venv_systemd.sh again
 ```
 
-**Check for missing dependencies:**
+**No audio input detected:**
 ```bash
-pip install -r requirements.txt
-```
-
-**Issue**: `ModuleNotFoundError: No module named 'pyaudio'`
-- **Solution**: Install system audio libraries
-  - Ubuntu/Debian: `sudo apt-get install python3-dev portaudio19-dev`
-  - Fedora: `sudo dnf install python3-devel portaudio-devel`
-  - macOS: `brew install portaudio`
-
-### Transcription is Slow
-
-**Cause**: Model is running on CPU instead of GPU
-**Solution**: Verify CUDA setup
-```bash
-python3 -c "import torch; print('CUDA:', torch.cuda.is_available()); print('Device:', torch.cuda.get_device_name() if torch.cuda.is_available() else 'CPU')"
-```
-
-If CUDA is available but not being used, check NVIDIA driver:
-```bash
-nvidia-smi
-```
-
-**Workaround**: Use smaller Whisper model (change "medium" to "base" or "small" in cli.py)
-
-### Tray Icon Not Showing
-
-**Cause**: KDE/GNOME doesn't display all tray icons by default
-
-**Solutions**:
-1. Check tray icon settings in your desktop environment
-2. Try pinning the icon to your taskbar
-3. Verify the application is running: `ps aux | grep whisper_app`
-
-### Audio Device Not Detected
-
-**Check available devices:**
-```bash
-python3 << 'EOF'
+python3 -c "
 import pyaudio
 audio = pyaudio.PyAudio()
 for i in range(audio.get_device_count()):
     info = audio.get_device_info_by_index(i)
-    print(f"{i}: {info['name']} (inputs: {info['maxInputChannels']})")
-EOF
+    if info['maxInputChannels'] > 0:
+        print(f'{i}: {info[\"name\"]}')
+"
+# Then: rm ~/.whisper/config && systemctl --user restart whisper-gui
 ```
 
-**Reconfigure microphone:**
-```bash
-rm ~/.whisper/config
-python -m whisper_app
-```
+**Shortcut triggers twice:**
+Make sure you only have one mechanism bound — either a desktop shortcut calling `whisper-recording-toggle`, or the built-in pynput hotkey (disabled by default), but not both.
 
-### Recording Stops Unexpectedly
-
-**Check journalctl for errors:**
-```bash
-journalctl --user -u whisper-gui -f
-```
-
-**Common causes**:
-- Microphone disconnected
-- Audio buffer overflow (lower audio quality in pyaudio settings)
-- Thread timeout in transcription (increase timeout in gui.py:112)
-
-**Solution**: Restart the service
-```bash
-systemctl --user restart whisper-gui
-```
-
-### Claude Processing Fails
-
-**Check if Claude CLI is installed:**
-```bash
-which claude
-```
-
-**Setup Claude CLI:**
-```bash
-npm install -g claude
-claude setup-token  # Enter your API key
-```
-
-**Verify connection:**
-```bash
-echo "Hello" | claude --print
-```
-
-### High Memory Usage
-
-**Cause**: Whisper model loaded in memory (normal, ~5GB for "medium" model)
-
-**Solution**: Use smaller model or reduce history size
-- Edit history limit in gui.py if needed
-- Consider using "base" or "small" model for limited-RAM systems
-
-### Permission Denied Errors
-
-**Check file permissions:**
-```bash
-ls -la ~/.whisper/
-ls -la ~/.config/systemd/user/
-```
-
-**Fix permissions:**
-```bash
-mkdir -p ~/.whisper ~/.config/systemd/user
-chmod 755 ~/.whisper ~/.config/systemd/user
-```
+**High memory usage:**
+~4 GB VRAM for the model is expected. System RAM usage is typically 1-2 GB.
 
 ## Development
 
-### Setting Up Development Environment
-
 ```bash
-# Clone and install with dev dependencies
-git clone https://github.com/yourusername/whisper-gui.git
-cd whisper-gui
-python3 -m venv venv
-source venv/bin/activate
 pip install -e ".[dev]"
+pytest                        # Run all tests
+pytest -v --cov=whisper_app   # With coverage
 ```
-
-### Running Tests
-
-```bash
-pytest                          # Run all tests
-pytest -v                       # Verbose output
-pytest --cov=whisper_app       # With coverage report
-pytest tests/test_hotkey.py    # Run specific test file
-```
-
-### Code Style and Linting
-
-```bash
-# Format code with black
-black src/ tests/
-
-# Check code style
-flake8 src/ tests/
-
-# Type checking
-mypy src/
-
-# Import sorting
-isort src/ tests/
-```
-
-### Making Changes
-
-1. Create a feature branch: `git checkout -b feature/my-feature`
-2. Make your changes
-3. Run tests: `pytest`
-4. Run linter: `black . && flake8 . && mypy src/`
-5. Commit: `git commit -m "Feature: description"`
-6. Push: `git push origin feature/my-feature`
-7. Open a Pull Request
-
-## System Requirements
-
-| Requirement | Minimum | Recommended |
-|---|---|---|
-| Python | 3.8 | 3.11+ |
-| RAM | 4GB | 8GB+ |
-| VRAM (GPU) | - | 4GB+ |
-| Disk | 2GB | 5GB+ |
-| OS | Linux | Ubuntu 20.04+, Fedora, KDE Neon |
-
-### Dependencies
-
-All Python dependencies are specified in `requirements.txt` with pinned versions for reproducibility.
-
-Core packages:
-- **openai-whisper**: Speech-to-text engine
-- **PyQt6**: Desktop GUI framework
-- **torch**: Deep learning framework (with CUDA support)
-- **pyaudio**: Audio recording
-- **pynput**: Keyboard input handling
-
-## Platform Support
-
-- ✅ **Linux** (Primary - tested on Debian/Ubuntu, Fedora)
-- ⚠️ **macOS** (Partial - audio may require system audio frameworks)
-- ❌ **Windows** (Not tested - may require modifications)
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Follow code style guidelines (see above)
-5. Submit a Pull Request
-
-See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
-
-## Documentation
-
-- **[Quick Start](docs/QUICK_START.md)** - Get up and running in 5 minutes
-- **[Architecture](docs/MULTI_OS_ARCHITECTURE.md)** - System design and components
-- **[Hotkey Setup](docs/SHORTCUT_SETUP.md)** - Configure keyboard shortcuts
-- **[GUI Guide](docs/WHISPER_GUI_README.md)** - Full feature documentation
-- **[Systemd Setup](docs/VENV_SYSTEMD_SETUP.md)** - Service configuration details
 
 ## License
 
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE) for details.
 
 ## Author
 
-**Rahul Rajaram**
-- Email: rahulrajaram2005@gmail.com
-- GitHub: [@rahulrajaram](https://github.com/rahulrajaram)
-
-## Acknowledgments
-
-- [OpenAI Whisper](https://github.com/openai/whisper) - Speech-to-text engine
-- [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) - GUI framework
-- [Claude](https://claude.ai/) - AI text processing
-- [PyAudio](https://people.csail.mit.edu/hubert/pyaudio/) - Audio recording
-
-## Roadmap
-
-- [ ] Multi-language support
-- [ ] Custom hotkey configuration UI
-- [ ] Export transcriptions (PDF, Word)
-- [ ] Batch transcription from audio files
-- [ ] Local LLM integration (Ollama)
-- [ ] Cloud storage integration
-- [ ] Browser extension for webpage transcription
-- [ ] Real-time transcription captions
-
-## Support
-
-For issues, questions, or suggestions:
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/whisper-gui/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/yourusername/whisper-gui/discussions)
-- 📧 **Email**: rahulrajaram2005@gmail.com
-
-## Project Status
-
-**Status**: Active Development (Beta)
-
-The project is actively maintained. Major features are stable, but expect occasional updates and improvements.
-
----
-
-**Last Updated**: November 2025
+Rahul Rajaram — [GitHub](https://github.com/rahulrajaram)

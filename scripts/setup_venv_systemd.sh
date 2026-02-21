@@ -1,92 +1,71 @@
 #!/bin/bash
 # Setup isolated Python virtual environment and systemd service for Whisper GUI
+#
+# This script:
+#   1. Creates a Python venv and installs dependencies
+#   2. Generates a systemd user service from the template
+#   3. Enables the service to start on login
+#
+# Usage:
+#   cd /path/to/whisper
+#   ./scripts/setup_venv_systemd.sh
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="$SCRIPT_DIR/venv"
-GUI_SERVICE_NAME="whisper-gui"
-GUI_SERVICE_FILE="$SCRIPT_DIR/whisper-gui.service"
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VENV_DIR="$REPO_DIR/venv"
+SERVICE_NAME="whisper-gui"
+SERVICE_TEMPLATE="$REPO_DIR/config/systemd/whisper-gui.service"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 
-echo "🚀 Setting up Whisper GUI with isolated Python environment and systemd service..."
+echo "Setting up Whisper GUI with isolated Python environment and systemd service..."
+echo "  Project directory: $REPO_DIR"
 echo ""
 
-# Step 1: Check if venv already exists
+# Step 1: Create venv
 if [ -d "$VENV_DIR" ]; then
-    echo "✅ Virtual environment already exists at: $VENV_DIR"
+    echo "Virtual environment already exists at: $VENV_DIR"
 else
-    echo "📦 Creating Python virtual environment..."
+    echo "Creating Python virtual environment..."
     python3 -m venv "$VENV_DIR"
-    echo "✅ Virtual environment created"
+    echo "Virtual environment created"
 fi
 
-# Step 2: Activate venv and install dependencies
+# Step 2: Install dependencies
 echo ""
-echo "📚 Installing dependencies in virtual environment..."
-source "$VENV_DIR/bin/activate"
-pip install --upgrade pip setuptools wheel > /dev/null 2>&1
-pip install -r "$SCRIPT_DIR/requirements.txt" > /dev/null 2>&1
-deactivate
-echo "✅ Dependencies installed"
+echo "Installing dependencies in virtual environment..."
+"$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel > /dev/null 2>&1
+"$VENV_DIR/bin/pip" install -r "$REPO_DIR/requirements.txt" > /dev/null 2>&1
+echo "Dependencies installed"
 
-# Step 3: Setup systemd service for the GUI
+# Step 3: Generate and install systemd service
 echo ""
-echo "⚙️  Setting up systemd user services..."
+echo "Setting up systemd user service..."
 
-# Create systemd user directory if it doesn't exist
 mkdir -p "$SYSTEMD_USER_DIR"
 
-# Copy the GUI service file
-cp "$GUI_SERVICE_FILE" "$SYSTEMD_USER_DIR/$GUI_SERVICE_NAME.service"
-echo "✅ GUI service file installed to: $SYSTEMD_USER_DIR/$GUI_SERVICE_NAME.service"
+# Substitute project directory placeholder in the template
+sed "s|WHISPER_PROJECT_DIR|$REPO_DIR|g" "$SERVICE_TEMPLATE" \
+    > "$SYSTEMD_USER_DIR/$SERVICE_NAME.service"
 
-# Reload systemd and enable the GUI service
+echo "Service file installed to: $SYSTEMD_USER_DIR/$SERVICE_NAME.service"
+
+# Step 4: Enable the service
 systemctl --user daemon-reload
-systemctl --user enable "$GUI_SERVICE_NAME.service"
-echo "✅ GUI service enabled"
+systemctl --user enable "$SERVICE_NAME.service"
+echo "Service enabled"
 
 echo ""
-echo "═══════════════════════════════════════════════════════════"
-echo "🎉 Setup Complete!"
-echo "═══════════════════════════════════════════════════════════"
+echo "Setup complete!"
 echo ""
-echo "📍 Virtual Environment:"
-echo "   Location: $VENV_DIR"
-echo "   Python: $VENV_DIR/bin/python3"
+echo "Quick commands:"
+echo "  Start now:      systemctl --user start $SERVICE_NAME"
+echo "  Check status:   systemctl --user status $SERVICE_NAME"
+echo "  View logs:      journalctl --user -u $SERVICE_NAME -f"
+echo "  Stop:           systemctl --user stop $SERVICE_NAME"
+echo "  Disable:        systemctl --user disable $SERVICE_NAME"
 echo ""
-echo "📍 Systemd Service:"
-echo "   GUI Service: $GUI_SERVICE_NAME"
-echo "   Location: $SYSTEMD_USER_DIR/$GUI_SERVICE_NAME.service"
-echo "   Status: Enabled (will start on next login)"
+echo "To set up a keyboard shortcut (e.g. Ctrl+Alt+Shift+R):"
+echo "  Point the shortcut at: $REPO_DIR/scripts/whisper-recording-toggle toggle"
 echo ""
-echo "🎮 Quick Commands:"
-echo ""
-echo "   Start the service now:"
-echo "   $ systemctl --user start $GUI_SERVICE_NAME"
-echo ""
-echo "   Check status:"
-echo "   $ systemctl --user status $GUI_SERVICE_NAME"
-echo ""
-echo "   View GUI logs:"
-echo "   $ journalctl --user -u $GUI_SERVICE_NAME -f"
-echo ""
-echo "   Stop the service:"
-echo "   $ systemctl --user stop $GUI_SERVICE_NAME"
-echo ""
-echo "   Disable autostart:"
-echo "   $ systemctl --user disable $GUI_SERVICE_NAME"
-echo ""
-echo "🔍 Verification:"
-echo ""
-echo "   Check venv works:"
-echo "   $ source $VENV_DIR/bin/activate"
-echo "   $ python3 --version"
-echo "   $ deactivate"
-echo ""
-echo "   Check the service is enabled:"
-echo "   $ systemctl --user is-enabled $GUI_SERVICE_NAME"
-echo ""
-echo "✨ Whisper will start automatically on next login!"
-echo "   The built-in HotkeyBackend will monitor CTRL+ALT+SHIFT+R to toggle recording!"
-echo ""
+echo "The service will start automatically on next login."
