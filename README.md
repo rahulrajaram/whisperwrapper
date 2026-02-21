@@ -28,12 +28,12 @@ Measured on NVIDIA GeForce RTX 4060 Laptop GPU (8 GB VRAM), Debian 12, Python 3.
 | Model | large-v3 (float16, CTranslate2) |
 | Model load time | ~1.3s (CUDA) |
 | VRAM usage | ~3.9 GB |
-| Inference speed | 4-6x realtime (e.g. 10s audio in ~2s) |
+| Inference speed | ~19x realtime (84s audio in 4.4s) |
 
 Performance is logged automatically on each transcription:
 
 ```
-Transcription: 5.2s audio → 1.1s inference (4.7x realtime) on cuda
+Transcription: 83.7s audio → 4.4s inference (19.0x realtime) on cuda
 ```
 
 ## Requirements
