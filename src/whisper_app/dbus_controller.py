@@ -123,7 +123,7 @@ class DBusCommandController(CommandController):
             logger.error(error_msg)
             raise IPCControllerError(error_msg) from e
 
-    def _try_dbus_start(self) -> bool:
+    def _try_dbus_start(self) -> bool:  # pragma: no cover - requires D-Bus runtime
         """Try to start D-Bus service.
 
         Returns:
@@ -166,7 +166,7 @@ class DBusCommandController(CommandController):
                 logger.debug(f"D-Bus initialization failed: {e}")
             return False
 
-    def _use_fifo_fallback(self) -> None:
+    def _use_fifo_fallback(self) -> None:  # pragma: no cover - exercised via integration
         """Use FIFO implementation as fallback."""
         if self._fallback_controller is None:
             # Import here to avoid circular dependencies
@@ -260,7 +260,7 @@ class DBusCommandController(CommandController):
             raise IPCControllerError(error_msg) from e
 
 
-class _WhisperCommandObject(Object):
+class _WhisperCommandObject(Object):  # pragma: no cover - D-Bus object wrapper
     """D-Bus object that provides the Whisper command interface.
 
     This class is only instantiated if D-Bus is available.

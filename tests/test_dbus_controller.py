@@ -14,11 +14,13 @@ Key Test Categories:
 5. Configuration Options
 """
 
+import os
 import unittest
 import logging
 import sys
 from unittest.mock import Mock, patch, MagicMock
 import tempfile
+import types
 
 # Pre-mock heavy dependencies
 sys.modules['torch'] = MagicMock()
@@ -31,6 +33,14 @@ logger = logging.getLogger(__name__)
 
 class TestDBusControllerFallback(unittest.TestCase):
     """Test D-Bus controller fallback behavior."""
+
+    def setUp(self):
+        """Use an ephemeral HOME so FIFO paths are writable in sandbox."""
+        self._temp_home = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp_home.cleanup)
+        self._home_patch = patch.dict(os.environ, {"HOME": self._temp_home.name})
+        self._home_patch.start()
+        self.addCleanup(self._home_patch.stop)
 
     def test_initialization_without_dbus(self):
         """Test that controller initializes even without D-Bus."""
@@ -261,6 +271,101 @@ class TestDBusControllerFallback(unittest.TestCase):
         # Check they're callable
         self.assertTrue(callable(controller.start))
         self.assertTrue(callable(controller.stop))
+
+    def test_dbus_try_start_success(self):
+        from src.whisper_app import dbus_controller as module
+        from src.whisper_app.dbus_controller import DBusCommandController
+
+        class FakeSessionBus:
+            def __init__(self):
+                self.names = []
+
+            def request_name(self, name, flag):
+                self.names.append((name, flag))
+
+        class FakeDBus:
+            SessionBus = FakeSessionBus
+            bus = types.SimpleNamespace(NAME_FLAG_REPLACE_EXISTING=1)
+            DBusException = Exception
+
+        patch_method = lambda *args, **kwargs: (lambda func: func)
+
+        with patch.object(module, "HAS_DBUS", True), \
+             patch.object(module, "dbus", FakeDBus), \
+             patch.object(module, "Object", object), \
+             patch.object(module, "method", patch_method):
+            controller = DBusCommandController(use_fallback=False, debug=True)
+            self.assertTrue(controller._try_dbus_start())
+            self.assertTrue(controller.is_running)
+            controller.stop()
+
+    def test_dbus_fallback_sends_commands(self):
+        from src.whisper_app import dbus_controller as module
+        from src.whisper_app.dbus_controller import DBusCommandController
+
+        class StubFIFO:
+            def __init__(self, *_, **__):
+                self.started = False
+                self.sent = []
+
+            def start(self):
+                self.started = True
+
+            def stop(self):
+                self.started = False
+
+            def send_command(self, command):
+                self.sent.append(command)
+
+        with patch.object(module, "HAS_DBUS", False), \
+             patch("src.whisper_app.fifo_controller.FIFOCommandController", lambda *args, **kwargs: StubFIFO()):
+            controller = DBusCommandController(use_fallback=True, debug=True)
+            controller.start()
+            controller.send_command("toggle")
+            self.assertTrue(controller._fallback_controller.started)
+            self.assertEqual(controller._fallback_controller.sent, ["toggle"])
+            controller.stop()
+
+    def test_whisper_command_object_dispatch(self):
+        from src.whisper_app import dbus_controller as module
+
+        events = []
+
+        base = type("Base", (), {"__init__": lambda self, bus, path: None})
+        decorator = lambda *args, **kwargs: (lambda func: func)
+
+        with patch.object(module, "Object", base), patch.object(module, "method", decorator):
+            obj = module._WhisperCommandObject(
+                bus=None,
+                path="/org/whisper/CommandControl",
+                interface=module.DBusCommandController.DBUS_INTERFACE,
+                dispatch_callback=lambda cmd: events.append(cmd),
+                debug=True,
+            )
+
+            obj.Start()
+            obj.Stop()
+            obj.Toggle()
+
+        self.assertEqual(events, ["start", "stop", "toggle"])
+
+    def test_dbus_try_start_success(self):
+        from src.whisper_app import dbus_controller as module
+        from src.whisper_app.dbus_controller import DBusCommandController
+
+        class FakeBus:
+            def __init__(self):
+                self.names = []
+
+            def request_name(self, name, flag):
+                self.names.append((name, flag))
+
+        class FakeDBus:
+            SessionBus = FakeBus
+            bus = types.SimpleNamespace(NAME_FLAG_REPLACE_EXISTING=1)
+            DBusException = Exception
+
+        monkeypatch = patch.dict
 
 
 if __name__ == '__main__':

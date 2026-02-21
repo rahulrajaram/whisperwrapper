@@ -152,21 +152,9 @@ First run may download the model (~1.4GB). This is normal.
 python3 -c "import whisper; whisper.load_model('base')"
 ```
 
-## Integration with Hotkey Daemon
+## Global Hotkey Integration
 
-This GUI app is standalone, but you can also use it alongside the hotkey daemon:
-
-1. **Run hotkey daemon** in one terminal:
-   ```bash
-   sudo ./run_daemon.sh --debug
-   ```
-
-2. **Run GUI** in another terminal:
-   ```bash
-   ./whisper_gui.py
-   ```
-
-Both can run simultaneously. Use the GUI for manual recording and hotkeys for quick voice input from anywhere.
+The GUI now embeds the `HotkeyBackend`, so the default chord (`Ctrl+Alt+Shift+R`) works as soon as the app starts—no separate daemon needed. If you prefer desktop-managed shortcuts (e.g., KDE’s Custom Shortcuts or GNOME’s Settings), use the `whisper-recording-toggle` helper described in `docs/SHORTCUT_SETUP.md` to send signals directly to the running GUI process.
 
 ## Application Architecture
 
@@ -214,4 +202,4 @@ Same as parent Whisper project
 For issues with:
 - **GUI**: Edit `whisper_gui.py`
 - **Recording**: Check `whisper_cli.py`
-- **Hotkeys**: See `HOTKEY_DAEMON_README.md`
+- **Hotkeys**: See `SHORTCUT_SETUP.md`

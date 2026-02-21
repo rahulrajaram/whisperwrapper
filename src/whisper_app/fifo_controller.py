@@ -25,26 +25,26 @@ WHAT FAILED (Nested loops with non-blocking reads):
 - Used os.open() with O_NONBLOCK flag
 - Tried to read multiple times from same file descriptor
 - After 7-8 read cycles, FIFO state became corrupted
-- Hotkey daemon would stop responding
+- External hotkey producers would stop responding
 
 WHY IT FAILED:
-- Hotkey daemon: open(FIFO) -> write(command) -> close(FIFO)
+- Hotkey producer: open(FIFO) -> write(command) -> close(FIFO)
 - GUI with nested loops: try to read multiple times from same fd
 - Multiple reads from same fd desynchronizes producer/consumer state
 - FIFO assumes open-write-close per transaction, not multiple reads per fd
 
 WHAT WORKS (Blocking open with single read per cycle):
-- Reader thread calls open(FIFO) and BLOCKS until daemon opens as writer
-- When daemon opens as writer, reader's open() returns
+- Reader thread calls open(FIFO) and BLOCKS until a producer opens as writer
+- When the producer opens as writer, reader's open() returns
 - Reader reads ONE message
 - Reader closes fd and loops back to open()
-- Loop repeats: reader waits for next daemon connection
+- Loop repeats: reader waits for the next producer connection
 
 WHY THIS WORKS:
 - Standard FIFO pattern (one read per open-close cycle)
 - Natural synchronization via blocking semantics
 - No state corruption possible
-- Matches daemon's request-response pattern exactly
+- Matches the producer's request-response pattern exactly
 
 SHUTDOWN MECHANISM:
 - When GUI stops: stop() method opens FIFO as writer
@@ -125,15 +125,19 @@ class FIFOCommandController(CommandController):
                 except OSError as e:
                     logger.warning(f"Could not remove old FIFO: {e}")
 
-            # Create new FIFO
+            # Create new FIFO with world-writable permissions so desktop shortcuts can send commands
+            desired_mode = 0o666
             try:
-                os.mkfifo(str(self.fifo_path))
-                if self.debug:
-                    logger.debug(f"✅ Created FIFO at {self.fifo_path}")
+                os.mkfifo(str(self.fifo_path), desired_mode)
             except FileExistsError:
-                # FIFO already exists, which is okay
                 if self.debug:
                     logger.debug(f"FIFO already exists: {self.fifo_path}")
+            try:
+                os.chmod(str(self.fifo_path), desired_mode)
+            except OSError as chmod_exc:
+                logger.warning(f"Unable to set FIFO permissions to 666: {chmod_exc}")
+            if self.debug:
+                logger.debug(f"✅ Created FIFO at {self.fifo_path} (mode {oct(desired_mode)})")
 
             # Start reader thread
             self._stop_event.clear()
@@ -161,7 +165,7 @@ class FIFOCommandController(CommandController):
 
         CRITICAL FIX (Issue: Periodic hotkey breakage after 7-8 commands):
         - The reader thread's _read_loop() uses blocking open() semantics
-        - It waits indefinitely for the hotkey daemon to connect as a writer
+        - It waits indefinitely for the hotkey producer (GUI backend or desktop shortcut) to connect as a writer
         - Simply setting _stop_event doesn't interrupt the blocked open() call
         - Solution: We open the FIFO as a writer to unblock the reader's open()
         - This allows the reader thread to check _stop_event and exit gracefully
@@ -188,25 +192,33 @@ class FIFOCommandController(CommandController):
             # This is the key to graceful shutdown with blocking semantics
             # When reader's open() call returns (because we opened as writer),
             # it will check _stop_event.is_set() and exit the read loop
-            if self.fifo_path.exists():
-                try:
-                    # Use O_NONBLOCK to avoid hanging if there's no reader
-                    # We're just trying to wake up the blocking open() call
-                    fd = os.open(str(self.fifo_path), os.O_WRONLY | os.O_NONBLOCK)
+            need_wakeup = (
+                self.fifo_path.exists()
+                and self._reader_thread is not None
+                and self._reader_thread.is_alive()
+            )
+            if need_wakeup:
+                def _wake_fifo():
                     try:
-                        os.close(fd)
-                    except OSError:
-                        pass
-                    if self.debug:
-                        logger.debug("Opened FIFO as writer to interrupt reader")
-                except (OSError, FileNotFoundError):
-                    # FIFO might not exist, or might have no reader - that's OK
-                    # This is expected in tests where reader may have already exited
-                    pass
+                        # Blocking open() ensures the reader's pending open() call resumes immediately.
+                        # Because the reader thread is alive, either it's currently blocked waiting for a
+                        # writer or it already has the FIFO open for reading. In both cases, opening the
+                        # FIFO in write mode returns promptly and lets the reader notice _stop_event.
+                        with open(str(self.fifo_path), 'w'):
+                            pass
+                        if self.debug:
+                            logger.debug("Opened FIFO as writer to interrupt reader")
+                    except (OSError, FileNotFoundError) as exc:
+                        if self.debug:
+                            logger.debug(f"Unable to wake FIFO reader during stop(): {exc}")
+
+                waker = threading.Thread(target=_wake_fifo, daemon=True, name="FIFOWaker")
+                waker.start()
+                waker.join(timeout=0.5)
 
             # Wait for thread to finish (with timeout)
             if self._reader_thread and self._reader_thread.is_alive():
-                self._reader_thread.join(timeout=2.0)
+                self._reader_thread.join(timeout=0.5)
                 if self._reader_thread.is_alive():
                     logger.warning("Reader thread did not stop within timeout")
 
@@ -231,8 +243,8 @@ class FIFOCommandController(CommandController):
         """Main loop for reading commands from FIFO.
 
         This runs in a background thread and reads commands from the FIFO.
-        Uses blocking semantics: blocks on open until hotkey daemon connects, reads one message, closes, repeats.
-        This is the standard FIFO pattern and most reliable for the production hotkey daemon use case.
+        Uses blocking semantics: blocks on open until a producer connects, reads one message, closes, repeats.
+        This is the standard FIFO pattern and most reliable for the production hotkey integration.
 
         DESIGN RATIONALE (Fixed Periodic Hotkey Breakage):
 
@@ -243,21 +255,21 @@ class FIFOCommandController(CommandController):
                   try_read()                                # Multiple reads from same fd
 
         This caused FIFO state corruption after 7-8 reads because:
-        - Hotkey daemon opens FIFO, writes 1 command, closes
+        - Hotkey producer opens FIFO, writes 1 command, closes
         - Inner loop tries to read again from same fd = empty read
-        - This desynchronizes daemon and reader state
+- This desynchronizes producer and reader state
 
         Current implementation uses simple blocking semantics:
           while not stop_event.is_set():
-              open(path)                    # Blocks until daemon connects
+              open(path)                    # Blocks until producer connects
               read_once()                   # Single read per connection
               close()                       # Close immediately
-              loop back                     # Wait for next daemon connection
+              loop back                     # Wait for next producer connection
 
         Why this works:
         - Standard FIFO pattern (open, read, close pattern)
         - One read per fd lifecycle = no state corruption
-        - Hotkey daemon expects simple request-response pattern
+        - Hotkey producers expect simple request-response pattern
         - Blocking open() provides natural synchronization
 
         Shutdown mechanism:
@@ -269,13 +281,13 @@ class FIFOCommandController(CommandController):
             while not self._stop_event.is_set():
                 try:
                     # BLOCKING OPEN: Standard FIFO pattern
-                    # Waits indefinitely until hotkey daemon opens as writer
+                    # Waits indefinitely until a producer opens as writer
                     # This is how FIFOs are designed to work (producer-consumer sync)
-                    # When daemon connects, open() returns and we can read the command
+                    # When the writer connects, open() returns and we can read the command
                     with open(str(self.fifo_path), 'r') as fifo:
-                        # Read the complete message from daemon
-                        # fifo.read() blocks until daemon closes the FIFO
-                        # (daemon opens, writes, closes = we get the data)
+                        # Read the complete message from the producer
+                        # fifo.read() blocks until the writer closes the FIFO
+                        # (producer opens, writes, closes = we get the data)
                         data = fifo.read().strip()
 
                         # Only dispatch if there's actual data
@@ -285,7 +297,7 @@ class FIFOCommandController(CommandController):
                                 logger.debug(f"🔔 Received command: {data}")
                             self._dispatch_command(data)
 
-                    # Loop back to open() and wait for next daemon connection
+                    # Loop back to open() and wait for the next producer connection
                     # This avoids any nested-loop corruption
 
                 except FileNotFoundError:
@@ -319,7 +331,7 @@ class FIFOCommandController(CommandController):
     def send_command(self, command: str) -> None:
         """Send a command through the FIFO (for testing).
 
-        This method mirrors what the hotkey daemon does:
+        This method mirrors what the hotkey producer does:
         1. Opens FIFO as writer (blocks until reader has open)
         2. Writes command
         3. Closes FIFO

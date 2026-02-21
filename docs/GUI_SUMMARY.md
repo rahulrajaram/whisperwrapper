@@ -99,7 +99,7 @@ whisper_gui.py (720 lines)
   - Installation instructions
   - Usage guide with screenshots
   - Troubleshooting section
-  - Integration with hotkey daemon
+  - Built-in global hotkey support / desktop shortcuts
   - Architecture explanation
 
 - **SETUP_GUI.md** (100+ lines)
@@ -252,7 +252,7 @@ else:
    - Drag-and-drop support
 
 3. **Integration**
-   - Integration with hotkey daemon
+   - Built-in hotkey backend and desktop shortcut tooling
    - Cloud sync (Google Drive, Dropbox)
    - Multi-language support
    - Custom keyboard shortcuts

@@ -96,7 +96,7 @@ sudo apt-get install xclip
 ## Next Steps
 
 - **Learn Features**: See `WHISPER_GUI_README.md` for full documentation
-- **Use Hotkeys**: Run hotkey daemon alongside GUI for quick voice capture
+- **Use Hotkeys**: The GUI ships with a built-in listener (Ctrl+Alt+Shift+R) or configure desktop shortcuts via `SHORTCUT_SETUP.md`
 - **Integrate**: Use with other applications or build on the codebase
 
 Enjoy! 🎤✨

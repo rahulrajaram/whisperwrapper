@@ -160,8 +160,8 @@ systemctl --user restart whisper-gui.service
 ## Tips & Tricks
 
 ### Keyboard Shortcuts
-- Currently the GUI focuses on mouse/button interaction
-- Global hotkeys available through hotkey daemon (separate)
+- Use Ctrl+Alt+Shift+R for global toggle (provided by the embedded HotkeyBackend)
+- For desktop-managed shortcuts see `docs/SHORTCUT_SETUP.md`
 
 ### Better Transcription
 - Speak clearly and at normal volume
@@ -286,24 +286,8 @@ cp ~/.whisper/gui_history.json ~/whisper_history_$(date +%Y%m%d_%H%M%S).json
 
 ## Advanced Usage
 
-### Using With Hotkey Daemon
-Run both simultaneously:
-
-**Terminal 1**: Start the hotkey daemon
-```bash
-cd ~/Documents/whisper
-sudo ./run_daemon.sh --debug
-```
-
-**Terminal 2**: Start the GUI
-```bash
-cd ~/Documents/whisper
-./whisper_gui.py
-```
-
-Now you can:
-- Use **CTRL+ALT+R** hotkey for quick global recording
-- Use **GUI** for managed history and manual recording
+### Global Hotkeys
+The GUI ships with a built-in `HotkeyBackend`, so pressing **Ctrl+Alt+Shift+R** toggles recording as soon as the window launches—no extra daemon required. If you’d rather let the desktop environment send signals (useful for Wayland), wire KDE/GNOME shortcuts to the `whisper-recording-toggle` helper described in `docs/SHORTCUT_SETUP.md`.
 
 ### Custom Configuration
 The GUI uses your existing Whisper configuration from CLI.

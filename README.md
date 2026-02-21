@@ -151,7 +151,7 @@ whisper-gui/
 
 **ipc_controller.py** - Communication between processes:
 - Base class for inter-process messaging
-- Supports hotkey daemon communication
+- Handles hotkey/backend + shortcut commands via FIFO
 - Clean abstraction for different IPC methods
 
 **fifo_controller.py** - FIFO-based IPC:
@@ -400,7 +400,7 @@ See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
 - **[Quick Start](docs/QUICK_START.md)** - Get up and running in 5 minutes
 - **[Architecture](docs/MULTI_OS_ARCHITECTURE.md)** - System design and components
-- **[Hotkey Setup](docs/HOTKEY_DAEMON_README.md)** - Configure keyboard shortcuts
+- **[Hotkey Setup](docs/SHORTCUT_SETUP.md)** - Configure keyboard shortcuts
 - **[GUI Guide](docs/WHISPER_GUI_README.md)** - Full feature documentation
 - **[Systemd Setup](docs/VENV_SYSTEMD_SETUP.md)** - Service configuration details
 
