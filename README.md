@@ -8,6 +8,8 @@ A PyQt6 desktop application for speech-to-text transcription using [faster-whisp
 
 > **Platform: Linux only.** This application depends on systemd, FIFO-based IPC, PyAudio/ALSA, and X11/XCB. It does not work on macOS or Windows.
 
+![Whisper Voice Recording GUI](assets/screenshot.png)
+
 ## Features
 
 - **Speech-to-text** using faster-whisper large-v3 (best Whisper model, 4-6x faster than openai-whisper via CTranslate2)

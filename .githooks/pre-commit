@@ -109,7 +109,7 @@ fi
 if echo "$CHANGED" | grep -E '\.py$' >/dev/null 2>&1; then
   green "pre-commit: running Python linter (critical errors only)"
   if command -v python3 >/dev/null 2>&1; then
-    if ! python3 -m flake8 src/whisper_app/ --select=E9,F63,F7,F82,F821 --count 2>/dev/null; then
+    if ! python3 -m flake8 src/whisper_app/ --exclude='*/venv/*,*/.venv/*' --select=E9,F63,F7,F82,F821 --count 2>/dev/null; then
       red "Python linting failed with critical errors. Fix undefined names and syntax errors."
       exit 1
     fi

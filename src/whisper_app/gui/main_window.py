@@ -8,6 +8,7 @@ import os
 import signal
 import logging
 import time
+from pathlib import Path
 from typing import Optional
 
 try:
@@ -19,11 +20,16 @@ try:
     from PyQt6.QtCore import Qt, pyqtSignal, QObject, QMetaObject, pyqtSlot, QUrl
     from PyQt6.QtGui import QColor, QFont, QIcon
     from PyQt6.QtWidgets import QHeaderView
-    from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 except ImportError:
-    print("❌ PyQt6 is not installed!")
+    print("PyQt6 is not installed!")
     print("Install with: pip install PyQt6")
     sys.exit(1)
+
+try:
+    from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+    _HAS_MULTIMEDIA = True
+except ImportError:
+    _HAS_MULTIMEDIA = False
 
 
 class CommandSignalEmitter(QObject):
@@ -113,26 +119,31 @@ class WhisperGUI(QMainWindow):
         self.command_emitter.start_signal.connect(self.start_recording)
         self.command_emitter.stop_signal.connect(self.stop_recording)
 
-        # Initialize audio player for completion sound
-        self.audio_output = QAudioOutput()
-        self.media_player = QMediaPlayer()
-        self.media_player.setAudioOutput(self.audio_output)
-
-        # Connect error signal for debugging
-        self.media_player.errorOccurred.connect(
-            lambda error, error_string: logger.error(f"Media player error: {error} - {error_string}")
-        )
-
-        # Load completion sound
-        import os
-        completion_sound = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'assets', 'sweet-transition-153787.mp3')
-        completion_sound_abs = os.path.abspath(completion_sound)
-        if os.path.exists(completion_sound):
-            source_url = QUrl.fromLocalFile(completion_sound_abs)
-            self.media_player.setSource(source_url)
-            logger.info(f"Loaded completion sound: {completion_sound_abs}")
+        # Initialize audio player for completion sound (optional)
+        self.media_player: Optional[QMediaPlayer] = None
+        if _HAS_MULTIMEDIA:
+            try:
+                self._audio_output = QAudioOutput()
+                self.media_player = QMediaPlayer()
+                self.media_player.setAudioOutput(self._audio_output)
+                self.media_player.errorOccurred.connect(
+                    lambda error, error_string: logger.error(
+                        f"Media player error: {error} - {error_string}"
+                    )
+                )
+                # Look for completion sound relative to package root
+                sound_path = Path(__file__).resolve().parent.parent.parent.parent / "assets" / "sweet-transition-153787.mp3"
+                if sound_path.exists():
+                    self.media_player.setSource(QUrl.fromLocalFile(str(sound_path)))
+                    logger.info("Loaded completion sound: %s", sound_path)
+                else:
+                    logger.info("Completion sound not found at %s, skipping", sound_path)
+                    self.media_player = None
+            except Exception:
+                logger.info("Could not initialize audio player, completion sound disabled")
+                self.media_player = None
         else:
-            logger.warning(f"Completion sound not found: {completion_sound_abs}")
+            logger.info("PyQt6.QtMultimedia not available, completion sound disabled")
 
         # Start the command bus (handles IPC communication)
         try:
@@ -366,11 +377,9 @@ class WhisperGUI(QMainWindow):
         self.tray_status.setText("🎤 Ready")
         self._set_tray_icon_green()  # Change icon back to green when transcription is done
         # Play completion sound
-        if self.media_player.source().isValid():
+        if self.media_player is not None:
             logger.debug("Playing completion sound")
             self.media_player.play()
-        else:
-            logger.warning("Cannot play completion sound: media source is not valid")
 
     def _on_presenter_recording_started(self):
         """Update UI on recording start."""

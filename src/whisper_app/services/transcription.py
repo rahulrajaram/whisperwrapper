@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import time
+import wave
 from contextlib import redirect_stderr
 from pathlib import Path
 from typing import Optional
@@ -37,6 +39,7 @@ class TranscriptionService:
             f"(compute_type={compute_type})"
         )
 
+        t0 = time.monotonic()
         try:
             self.model = WhisperModel(
                 runtime_config.model_name, device=self.device, compute_type=compute_type
@@ -50,6 +53,8 @@ class TranscriptionService:
                 )
             else:
                 raise
+        load_time = time.monotonic() - t0
+        logger.info("Model loaded in %.1fs on %s", load_time, self.device)
 
         self._vocab_prompt: Optional[str] = None
         self._vocab_mtime: float = 0.0
@@ -111,19 +116,22 @@ class TranscriptionService:
             filename = tmp_file.name
 
         try:
-            import wave
+            audio_data = b"".join(frames)
+            sample_width = pyaudio.get_sample_size(sample_format)
+            audio_duration = len(audio_data) / (rate * channels * sample_width)
 
             wav = wave.open(filename, "wb")
             wav.setnchannels(channels)
-            wav.setsampwidth(pyaudio.get_sample_size(sample_format))
+            wav.setsampwidth(sample_width)
             wav.setframerate(rate)
-            wav.writeframes(b"".join(frames))
+            wav.writeframes(audio_data)
             wav.close()
 
             transcribe_kwargs = dict(
                 beam_size=5, initial_prompt=self._get_vocabulary_prompt()
             )
 
+            t0 = time.monotonic()
             if headless:
                 with open(os.devnull, "w") as devnull:
                     with redirect_stderr(devnull):
@@ -136,6 +144,14 @@ class TranscriptionService:
                 )
 
             text = " ".join(segment.text for segment in segments).strip()
+            inference_time = time.monotonic() - t0
+
+            realtime_factor = audio_duration / inference_time if inference_time > 0 else 0
+            logger.info(
+                "Transcription: %.1fs audio → %.1fs inference (%.1fx realtime) on %s",
+                audio_duration, inference_time, realtime_factor, self.device,
+            )
+
             del segments, _info
 
             import gc
