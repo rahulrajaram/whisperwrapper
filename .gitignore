@@ -53,6 +53,9 @@ models/
 # Exception: Track application asset files
 !assets/*.mp3
 
+# Yore index
+.yore/
+
 # Test / coverage artifacts
 .coverage
 htmlcov/

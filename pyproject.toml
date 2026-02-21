@@ -51,6 +51,7 @@ Repository = "https://github.com/rahulrajaram/whisper-app"
 Issues = "https://github.com/rahulrajaram/whisper-app/issues"
 
 [project.scripts]
+whisperwrapper = "whisper_app.wrapper:main"
 whisper-gui = "whisper_app.gui:main"
 whisper-cli = "whisper_app.cli:main"
 
