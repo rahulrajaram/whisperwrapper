@@ -137,22 +137,19 @@ class WhisperGUI(QMainWindow):
                 background-color: #3d8b40;
             }
         """
-        self.start_button_style_recording = """
+        self.start_button_style_inactive = """
             QPushButton {
-                background-color: #4CAF50;
-                color: white;
+                background-color: #cccccc;
+                color: #888888;
                 font-weight: bold;
                 padding: 10px;
                 border-radius: 5px;
                 min-width: 50px;
                 min-height: 50px;
                 font-size: 24px;
-                border: 3px solid #45a049;
-                box-shadow: 0 0 20px #4CAF50, inset 0 0 20px rgba(76, 175, 80, 0.5);
             }
             QPushButton:hover {
-                background-color: #45a049;
-                box-shadow: 0 0 25px #4CAF50, inset 0 0 25px rgba(76, 175, 80, 0.6);
+                background-color: #cccccc;
             }
         """
         self.start_button.setStyleSheet(self.start_button_style_normal)
@@ -161,7 +158,22 @@ class WhisperGUI(QMainWindow):
 
         self.stop_button = QPushButton("⏹")
         self.stop_button.setToolTip("Stop Recording")
-        self.stop_button.setStyleSheet("""
+        self.stop_button_style_inactive = """
+            QPushButton {
+                background-color: #cccccc;
+                color: #888888;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+                min-width: 50px;
+                min-height: 50px;
+                font-size: 24px;
+            }
+            QPushButton:hover {
+                background-color: #cccccc;
+            }
+        """
+        self.stop_button_style_active = """
             QPushButton {
                 background-color: #f44336;
                 color: white;
@@ -178,9 +190,9 @@ class WhisperGUI(QMainWindow):
             QPushButton:pressed {
                 background-color: #ba0000;
             }
-        """)
+        """
+        self.stop_button.setStyleSheet(self.stop_button_style_inactive)
         self.stop_button.clicked.connect(self.stop_recording)
-        self.stop_button.setEnabled(False)
         button_layout.addWidget(self.stop_button)
 
         self.clear_button = QPushButton("🗑")
@@ -242,9 +254,10 @@ class WhisperGUI(QMainWindow):
             return
 
         self.is_recording = True
-        # Apply glowing style to start button
-        self.start_button.setStyleSheet(self.start_button_style_recording)
+        # Gray out start button and activate stop button
+        self.start_button.setStyleSheet(self.start_button_style_inactive)
         self.start_button.setEnabled(False)
+        self.stop_button.setStyleSheet(self.stop_button_style_active)
         self.stop_button.setEnabled(True)
         self.status_label.setText("🎤 Recording... (Press Stop when done)")
         self.statusBar().showMessage("Recording in progress...")
@@ -273,10 +286,10 @@ class WhisperGUI(QMainWindow):
     def on_recording_finished(self):
         """Handle recording completion"""
         self.is_recording = False
-        # Restore normal button style
+        # Restore start button and gray out stop button
         self.start_button.setStyleSheet(self.start_button_style_normal)
         self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
+        self.stop_button.setStyleSheet(self.stop_button_style_inactive)
         self.recording_thread.quit()
         self.recording_thread.wait()
 
