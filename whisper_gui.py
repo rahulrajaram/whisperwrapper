@@ -217,7 +217,7 @@ class WhisperGUI(QMainWindow):
         try:
             # Note: First run will download the Whisper model (~1.4GB)
             # This may take a few minutes - be patient!
-            self.whisper = WhisperCLI(headless=True, debug=False)
+            self.whisper = WhisperCLI(headless=True, debug=True)
         except Exception as e:
             error_msg = f"❌ Failed to initialize Whisper: {e}"
             print(error_msg)
@@ -1037,6 +1037,25 @@ class WhisperGUI(QMainWindow):
 
 
 def main():
+    # Singleton check - prevent multiple instances
+    import fcntl
+    lock_file_path = os.path.expanduser("~/.whisper/app.lock")
+    os.makedirs(os.path.dirname(lock_file_path), exist_ok=True)
+
+    try:
+        lock_file = open(lock_file_path, 'w')
+        # Try to acquire exclusive lock (non-blocking)
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except IOError:
+        # Another instance is already running
+        print("❌ Whisper GUI is already running!")
+        print("Only one instance can run at a time.")
+        sys.exit(1)
+
+    # Write PID to lock file
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+
     app = QApplication(sys.argv)
     window = WhisperGUI()
     window.show()
@@ -1049,7 +1068,16 @@ def main():
 
     signal.signal(signal.SIGINT, handle_sigint)
 
-    sys.exit(app.exec())
+    try:
+        sys.exit(app.exec())
+    finally:
+        # Release lock on exit
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
+            os.remove(lock_file_path)
+        except:
+            pass
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ import itertools
 from datetime import datetime
 from contextlib import redirect_stderr
 import io
+import torch
 
 class WhisperCLI:
     def __init__(self, headless=False, force_configure=False, debug=False):
@@ -25,12 +26,12 @@ class WhisperCLI:
         self.config_file = os.path.expanduser("~/.whisper/config")
         self.spinner_running = False
         self.spinner_thread = None
-        
+
+        # Detect GPU availability
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         if not headless:
-            print("🤖 Loading Whisper model...")
-        # Force CPU mode to avoid CUDA out of memory errors
-        # (GPU memory can be consumed by the GUI app)
-        self.model = whisper.load_model("medium", device="cpu")
+            print(f"🤖 Loading Whisper model on {self.device.upper()}...")
+        self.model = whisper.load_model("medium", device=self.device)
         self.recording = False
         self.audio_data = []
         self.stream = None
@@ -249,17 +250,17 @@ class WhisperCLI:
     def _record_audio(self):
         while self.recording and self.stream:
             try:
-                if self.stream.is_active():
-                    data = self.stream.read(self.chunk, exception_on_overflow=False)
+                # Read audio data directly without checking is_active()
+                # (is_active() can return False even when stream is recording)
+                data = self.stream.read(self.chunk, exception_on_overflow=False)
+                if data:
                     self.audio_data.append(data)
-                else:
-                    time.sleep(0.01)  # Small delay to prevent busy waiting
             except OSError as e:
-                print(f"Audio stream error: {e}")
+                self._debug(f"Audio stream error: {e}")
                 self.recording = False
                 break
             except Exception as e:
-                print(f"Unexpected error in recording: {e}")
+                self._debug(f"Unexpected error in recording: {e}")
                 self.recording = False
                 break
     
@@ -274,18 +275,25 @@ class WhisperCLI:
         if not self.headless:
             print("⏹️  Recording stopped. Processing...")
 
-        # Wait for recording thread to finish
+        # Wait for recording thread to finish (give it up to 2 seconds)
         if hasattr(self, 'recording_thread') and self.recording_thread.is_alive():
             self._debug("waiting for recording thread to finish")
             self.recording_thread.join(timeout=2.0)
-            self._debug("recording thread finished")
+            if self.recording_thread.is_alive():
+                self._debug("WARNING: recording thread still alive after 2 seconds!")
+            else:
+                self._debug("recording thread finished")
 
         # Clean up stream
         if self.stream:
             try:
-                if self.stream.is_active():
+                # Always try to stop the stream (don't check is_active as it's unreliable)
+                try:
                     self._debug("stopping audio stream")
                     self.stream.stop_stream()
+                except:
+                    pass  # Stream might already be stopped
+
                 self._debug("closing audio stream")
                 self.stream.close()
             except Exception as e:
@@ -316,16 +324,18 @@ class WhisperCLI:
             # Write audio data to wav file
             wf = wave.open(temp_filename, 'wb')
             wf.setnchannels(self.channels)
-            wf.setsampwidth(self.audio.get_sample_size(self.format))
+            # Use pyaudio static method instead of instance method (self.audio may be None after cleanup)
+            wf.setsampwidth(pyaudio.get_sample_size(self.format))
             wf.setframerate(self.rate)
             wf.writeframes(b''.join(self.audio_data))
             wf.close()
         
         try:
             # Transcribe with Whisper
+            self._debug("starting transcription")
             if not self.headless:
                 print("🤖 Transcribing...")
-            
+
             # Suppress warnings during transcription in headless mode
             if self.headless:
                 import warnings
@@ -336,26 +346,32 @@ class WhisperCLI:
                             result = self.model.transcribe(temp_filename)
             else:
                 result = self.model.transcribe(temp_filename)
-            
+
+            self._debug(f"transcription complete, result keys: {result.keys() if result else 'None'}")
+
             # Display results
             text = result["text"].strip()
+            self._debug(f"transcribed text: '{text}' (length: {len(text)})")
+
             if text:
                 if self.headless:
                     print(text)
                 else:
                     print(f"\n📝 Transcription:")
                     print(f"   {text}")
-                
+
                 # Write to FIFO if environment variable is set
                 self._write_to_fifo(text)
-                
+
                 return text
             else:
+                self._debug("no speech detected in transcription")
                 if not self.headless:
                     print("   (No speech detected)")
                 return None
-            
+
         except Exception as e:
+            self._debug(f"transcription exception: {e}")
             if not self.headless:
                 print(f"Error during transcription: {e}")
             return None
