@@ -1,0 +1,19 @@
+[Unit]
+Description=Whisper Voice Recording GUI - OpenAI Whisper voice recording with system tray
+After=graphical-session-started.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/home/rahul/Documents/whisper/venv/bin/python3 /home/rahul/Documents/whisper/whisper_gui.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment="PATH=/home/rahul/Documents/whisper/venv/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="QT_QPA_PLATFORMTHEME=kde"
+Environment="QT_QPA_PLATFORM=wayland;xcb"
+
+[Install]
+WantedBy=graphical-session.target

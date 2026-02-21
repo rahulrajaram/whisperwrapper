@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Whisper Voice Recording (Autostart)
+Comment=Record and transcribe voice to text using AI - runs on startup
+Icon=audio-microphone
+Exec=/home/rahul/Documents/whisper/launch_gui.sh
+Categories=Multimedia;Audio;Accessibility;Utility;
+Terminal=false
+StartupNotify=false
+X-KDE-AutostartPhase=2
+X-GNOME-Autostart-enabled=true
+Hidden=false

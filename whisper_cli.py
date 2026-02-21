@@ -28,7 +28,9 @@ class WhisperCLI:
         
         if not headless:
             print("🤖 Loading Whisper model...")
-        self.model = whisper.load_model("medium")
+        # Force CPU mode to avoid CUDA out of memory errors
+        # (GPU memory can be consumed by the GUI app)
+        self.model = whisper.load_model("medium", device="cpu")
         self.recording = False
         self.audio_data = []
         self.stream = None

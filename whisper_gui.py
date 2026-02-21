@@ -16,10 +16,11 @@ from typing import List
 try:
     from PyQt6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QTableWidget, QTableWidgetItem, QLabel, QStatusBar
+        QPushButton, QTableWidget, QTableWidgetItem, QLabel, QStatusBar,
+        QSystemTrayIcon, QMenu
     )
     from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread
-    from PyQt6.QtGui import QColor, QFont
+    from PyQt6.QtGui import QColor, QFont, QIcon
     from PyQt6.QtWidgets import QHeaderView
 except ImportError:
     print("❌ PyQt6 is not installed!")
@@ -58,6 +59,7 @@ class RecordingWorker(QObject):
     error = pyqtSignal(str)
     result = pyqtSignal(str)  # Emits the transcribed text
     stopped = pyqtSignal()
+    status_update = pyqtSignal(str)  # For progress feedback
 
     def __init__(self, whisper_cli: WhisperCLI):
         super().__init__()
@@ -79,15 +81,49 @@ class RecordingWorker(QObject):
                 time.sleep(0.1)
 
             # Stop recording and get transcription
-            transcription = self.whisper_cli.stop_recording()
+            # This can take a while (30-60 seconds) depending on audio length and Whisper model performance
+            self.status_update.emit("⏳ Stopping recording and processing audio... (this may take a minute)")
 
-            if transcription:
+            import time
+            import threading
+
+            # Use a timeout wrapper to prevent indefinite hangs
+            transcription = None
+            transcription_error = None
+
+            def transcribe_with_timeout():
+                nonlocal transcription, transcription_error
+                try:
+                    transcription = self.whisper_cli.stop_recording()
+                except Exception as e:
+                    transcription_error = str(e)
+
+            # Run transcription in a timeout thread (120 second timeout)
+            timeout_seconds = 120
+            transcribe_thread = threading.Thread(target=transcribe_with_timeout, daemon=True)
+            transcribe_thread.start()
+            transcribe_thread.join(timeout=timeout_seconds)
+
+            if transcribe_thread.is_alive():
+                # Transcription took too long
+                self.error.emit(f"Transcription timeout after {timeout_seconds} seconds - Whisper model may be stuck")
+                self.status_update.emit(f"❌ Transcription timeout after {timeout_seconds} seconds")
+            elif transcription_error:
+                self.error.emit(f"Transcription failed: {transcription_error}")
+                self.status_update.emit(f"❌ Transcription error: {transcription_error}")
+            elif transcription:
                 self.result.emit(transcription)
+            else:
+                # No audio was recorded
+                self.error.emit("No audio data was recorded")
+                self.status_update.emit("❌ No audio data was recorded")
 
             self.stopped.emit()
             self.finished.emit()
         except Exception as e:
-            self.error.emit(str(e))
+            error_msg = f"Recording error: {str(e)}"
+            self.error.emit(error_msg)
+            self.status_update.emit(error_msg)
             self.finished.emit()
 
 
@@ -179,9 +215,12 @@ class WhisperGUI(QMainWindow):
 
         # Initialize Whisper CLI
         try:
+            # Note: First run will download the Whisper model (~1.4GB)
+            # This may take a few minutes - be patient!
             self.whisper = WhisperCLI(headless=True, debug=False)
         except Exception as e:
-            print(f"❌ Failed to initialize Whisper: {e}")
+            error_msg = f"❌ Failed to initialize Whisper: {e}"
+            print(error_msg)
             sys.exit(1)
 
         # History storage
@@ -200,6 +239,9 @@ class WhisperGUI(QMainWindow):
         # Setup UI
         self.setup_ui()
         self.refresh_history_table()
+
+        # Setup system tray
+        self.setup_tray()
 
     def setup_ui(self):
         """Create the user interface"""
@@ -351,6 +393,54 @@ class WhisperGUI(QMainWindow):
         self.codex_button.clicked.connect(self.on_codex_button_clicked)
         button_layout.addWidget(self.codex_button)
 
+        self.terminal_button = QPushButton("💻")
+        self.terminal_button.setToolTip("Open Terminal in Project Directory")
+        self.terminal_button_style = """
+            QPushButton {
+                background-color: #1976D2;
+                color: white;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+                min-width: 50px;
+                min-height: 50px;
+                font-size: 24px;
+            }
+            QPushButton:hover {
+                background-color: #1565C0;
+            }
+            QPushButton:pressed {
+                background-color: #0D47A1;
+            }
+        """
+        self.terminal_button.setStyleSheet(self.terminal_button_style)
+        self.terminal_button.clicked.connect(self.on_terminal_button_clicked)
+        button_layout.addWidget(self.terminal_button)
+
+        self.settings_button = QPushButton("⚙️")
+        self.settings_button.setToolTip("Microphone Settings")
+        self.settings_button_style = """
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+                min-width: 50px;
+                min-height: 50px;
+                font-size: 20px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:pressed {
+                background-color: #3d8b40;
+            }
+        """
+        self.settings_button.setStyleSheet(self.settings_button_style)
+        self.settings_button.clicked.connect(self.on_settings_button_clicked)
+        button_layout.addWidget(self.settings_button)
+
         button_layout.addStretch()
         main_layout.addLayout(button_layout)
 
@@ -386,6 +476,213 @@ class WhisperGUI(QMainWindow):
         # Status bar
         self.statusBar().showMessage("Ready")
 
+    def setup_tray(self):
+        """Setup system tray icon and menu"""
+        # Create tray icon
+        self.tray_icon = QSystemTrayIcon(self)
+
+        # Try to set an icon - use a simple emoji-like icon or fallback to text
+        try:
+            # Create a simple icon using app icon
+            from PyQt6.QtGui import QPixmap, QPainter, QColor
+            pixmap = QPixmap(64, 64)
+            pixmap.fill(QColor(255, 255, 255, 0))  # Transparent background
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            # Draw a simple microphone icon using circles and lines
+            painter.setBrush(QColor(76, 175, 80))  # Green color
+            painter.drawEllipse(16, 8, 32, 32)  # Mic circle
+            painter.drawRect(26, 40, 12, 16)  # Mic stand
+            painter.end()
+            self.tray_icon.setIcon(QIcon(pixmap))
+        except:
+            # Fallback: just use text
+            pass
+
+        # Create tray menu
+        tray_menu = QMenu()
+
+        # Show/Hide action
+        show_action = tray_menu.addAction("Show/Hide")
+        show_action.triggered.connect(self.toggle_window)
+
+        # Recording status
+        tray_menu.addSeparator()
+        self.tray_status = tray_menu.addAction("🎤 Ready")
+        self.tray_status.setEnabled(False)
+
+        # Start recording action
+        tray_menu.addSeparator()
+        start_action = tray_menu.addAction("▶ Start Recording")
+        start_action.triggered.connect(self.start_recording)
+
+        # Stop recording action
+        stop_action = tray_menu.addAction("⏹ Stop Recording")
+        stop_action.triggered.connect(self.stop_recording)
+
+        # Exit action
+        tray_menu.addSeparator()
+        exit_action = tray_menu.addAction("Exit")
+        exit_action.triggered.connect(self.exit_app)
+
+        self.tray_icon.setContextMenu(tray_menu)
+
+        # Show the tray icon
+        self.tray_icon.show()
+
+        # Connect to window state changes
+        self.tray_icon.activated.connect(self.tray_icon_activated)
+
+    def toggle_window(self):
+        """Toggle window visibility"""
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
+            self.raise_()
+            self.activateWindow()
+
+    def tray_icon_activated(self, reason):
+        """Handle tray icon activation (single click, double click, etc.)"""
+        from PyQt6.QtWidgets import QSystemTrayIcon
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.toggle_window()
+
+    def exit_app(self):
+        """Exit the application completely"""
+        if self.is_recording:
+            self.stop_recording()
+
+        # Clean up threads if they're still running
+        if self.recording_thread and self.recording_thread.isRunning():
+            self.recording_thread.quit()
+            self.recording_thread.wait()
+
+        # Hide tray icon and cleanup
+        self.tray_icon.hide()
+
+        # Cleanup Whisper resources
+        self.whisper.cleanup()
+
+        # Exit the application via sys.exit (bypasses closeEvent)
+        sys.exit(0)
+
+    def on_terminal_button_clicked(self):
+        """Open Xfce terminal in the Whisper project directory"""
+        import shutil
+
+        # Get the project directory (where this script is located)
+        project_dir = str(Path(__file__).parent.absolute())
+
+        # List of terminal commands to try (with full paths and fallbacks)
+        terminal_commands = [
+            (["/usr/bin/xfce4-terminal", "--working-directory", project_dir], "xfce4-terminal"),
+            (["xfce4-terminal", "--working-directory", project_dir], "xfce4-terminal"),
+            (["/usr/bin/konsole", "-e", f"bash -c 'cd {project_dir} && bash'"], "konsole"),
+            (["konsole", "-e", f"bash -c 'cd {project_dir} && bash'"], "konsole"),
+            (["/usr/bin/gnome-terminal", "--working-directory", project_dir], "gnome-terminal"),
+            (["gnome-terminal", "--working-directory", project_dir], "gnome-terminal"),
+            (["/usr/bin/xterm", "-e", f"cd {project_dir}; bash"], "xterm"),
+            (["xterm", "-e", f"cd {project_dir}; bash"], "xterm"),
+        ]
+
+        terminal_found = False
+        for cmd, name in terminal_commands:
+            try:
+                subprocess.Popen(cmd, start_new_session=True)
+                self.statusBar().showMessage(f"📂 Terminal ({name}) opened in: {project_dir}")
+                terminal_found = True
+                break
+            except (FileNotFoundError, OSError):
+                continue
+
+        if not terminal_found:
+            error_msg = "❌ No terminal found (tried xfce4-terminal, konsole, gnome-terminal, xterm)"
+            self.statusBar().showMessage(error_msg)
+            self.status_label.setText(error_msg)
+
+    def on_settings_button_clicked(self):
+        """Open microphone settings dialog"""
+        from PyQt6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+
+        # Get available input devices
+        try:
+            input_devices = []
+            device_names = []
+
+            for i in range(self.whisper.audio.get_device_count()):
+                try:
+                    device_info = self.whisper.audio.get_device_info_by_index(i)
+                    if device_info['maxInputChannels'] > 0:
+                        input_devices.append(i)
+                        device_names.append(device_info['name'])
+                except:
+                    continue
+
+            if not input_devices:
+                self.status_label.setText("❌ No input devices found")
+                return
+
+            # Create settings dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Microphone Settings")
+            dialog.setGeometry(200, 200, 500, 150)
+
+            layout = QVBoxLayout(dialog)
+
+            # Label
+            label = QLabel("Select microphone input device:")
+            layout.addWidget(label)
+
+            # Dropdown
+            combo = QComboBox()
+            combo.addItems(device_names)
+
+            # Load current selection
+            current_device = self.whisper.input_device_index
+            if current_device is not None and current_device in input_devices:
+                combo.setCurrentIndex(input_devices.index(current_device))
+
+            layout.addWidget(combo)
+
+            # Buttons
+            button_layout = QHBoxLayout()
+
+            ok_button = QPushButton("OK")
+            cancel_button = QPushButton("Cancel")
+
+            def save_settings():
+                selected_index = combo.currentIndex()
+                device_idx = input_devices[selected_index]
+
+                # Save to config
+                import json
+                config_file = os.path.expanduser("~/.whisper/config")
+                config = {"input_device_index": device_idx}
+                os.makedirs(os.path.dirname(config_file), exist_ok=True)
+                with open(config_file, 'w') as f:
+                    json.dump(config, f, indent=2)
+
+                # Update whisper instance
+                self.whisper.input_device_index = device_idx
+
+                self.status_label.setText(f"✅ Microphone set to: {device_names[selected_index]}")
+                self.statusBar().showMessage("Microphone settings saved")
+                dialog.accept()
+
+            ok_button.clicked.connect(save_settings)
+            cancel_button.clicked.connect(dialog.reject)
+
+            button_layout.addWidget(ok_button)
+            button_layout.addWidget(cancel_button)
+            layout.addLayout(button_layout)
+
+            dialog.exec()
+
+        except Exception as e:
+            self.status_label.setText(f"❌ Error: {str(e)}")
+            self.statusBar().showMessage("Failed to access audio devices")
+
     def start_recording(self):
         """Start recording"""
         if self.is_recording:
@@ -400,6 +697,8 @@ class WhisperGUI(QMainWindow):
         self.stop_button.setEnabled(True)
         self.status_label.setText("🎤 Recording... (Press Stop when done)")
         self.statusBar().showMessage("Recording in progress...")
+        # Update tray status
+        self.tray_status.setText("🎤 Recording...")
 
         # Start recording in a worker thread
         self.recording_worker = RecordingWorker(self.whisper)
@@ -410,6 +709,7 @@ class WhisperGUI(QMainWindow):
         self.recording_worker.finished.connect(self.on_recording_finished)
         self.recording_worker.result.connect(self.on_recording_result)
         self.recording_worker.error.connect(self.on_recording_error)
+        self.recording_worker.status_update.connect(self.on_recording_status_update)
 
         self.recording_thread.start()
 
@@ -429,6 +729,8 @@ class WhisperGUI(QMainWindow):
         self.start_button.setStyleSheet(self.start_button_style_normal)
         self.start_button.setEnabled(True)
         self.stop_button.setStyleSheet(self.stop_button_style_inactive)
+        # Update tray status
+        self.tray_status.setText("🎤 Ready")
         self.recording_thread.quit()
         self.recording_thread.wait()
 
@@ -461,6 +763,11 @@ class WhisperGUI(QMainWindow):
         """Handle recording error"""
         self.status_label.setText(f"❌ Error: {error_msg}")
         self.statusBar().showMessage("Error during recording")
+
+    def on_recording_status_update(self, status: str):
+        """Handle status updates from recording worker"""
+        self.status_label.setText(status)
+        self.statusBar().showMessage(status)
 
     def refresh_history_table(self):
         """Refresh the history table display"""
@@ -718,16 +1025,15 @@ class WhisperGUI(QMainWindow):
         self.codex_thread.wait()
 
     def closeEvent(self, event):
-        """Handle application close"""
+        """Handle window close - minimize to tray instead of exiting"""
+        # If recording is active, stop it
         if self.is_recording:
             self.whisper.stop_recording()
 
-        if self.recording_thread and self.recording_thread.isRunning():
-            self.recording_thread.quit()
-            self.recording_thread.wait()
-
-        self.whisper.cleanup()
-        event.accept()
+        # Just hide the window, don't exit the app
+        # The app continues running in the system tray
+        self.hide()
+        event.ignore()  # Ignore the close event to prevent app exit
 
 
 def main():
