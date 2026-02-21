@@ -893,6 +893,58 @@ class WhisperGUI(QMainWindow):
         self.status_label.setText(f"✅ Copied to clipboard: \"{transcription_text[:50]}...\"")
         self.statusBar().showMessage("✅ Transcription copied to clipboard")
 
+        # Auto-paste transcription to focused window
+        # Tries multiple paste methods for maximum compatibility:
+        # 1. Shift+Insert (universal X11 paste)
+        # 2. Ctrl+V (standard paste)
+        # 3. Ctrl+Shift+V (some apps like terminals)
+        try:
+            import subprocess
+            import os
+            import time
+
+            # Debug logging: show X11 environment
+            display = os.environ.get('DISPLAY', 'NOT SET')
+            xauth = os.environ.get('XAUTHORITY', 'NOT SET')
+            print(f"🔍 Auto-paste X11 env: DISPLAY={display}, XAUTHORITY={xauth}")
+
+            # Add small delay to ensure focus is stable
+            time.sleep(0.2)
+
+            # Try multiple paste methods for better compatibility
+            paste_methods = [
+                (['xdotool', 'key', 'shift+Insert'], "Shift+Insert"),
+                (['xdotool', 'key', 'ctrl+v'], "Ctrl+V"),
+                (['xdotool', 'key', 'ctrl+shift+v'], "Ctrl+Shift+V"),
+            ]
+
+            pasted = False
+            for cmd, method_name in paste_methods:
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        check=False,
+                        timeout=1,
+                        capture_output=True,
+                        text=True
+                    )
+
+                    if result.returncode == 0:
+                        print(f"📋 Auto-pasted with {method_name}")
+                        pasted = True
+                        break
+                except subprocess.TimeoutExpired:
+                    continue
+                except Exception as e:
+                    continue
+
+            if not pasted:
+                print("⚠️ All paste methods failed (window may not have focus)")
+
+        except Exception as e:
+            print(f"⚠️ Auto-paste failed (non-critical): {e}")
+            # Don't fail the transcription - this is just a convenience feature
+
         self.refresh_history_table()
 
     def on_recording_error(self, error_msg: str):
@@ -998,19 +1050,31 @@ class WhisperGUI(QMainWindow):
         """
         try:
             if os.environ.get("WAYLAND_DISPLAY"):
+                # Wayland: wl-copy handles both selections
                 process = subprocess.Popen(
                     ["wl-copy"],
                     stdin=subprocess.PIPE,
                     text=True
                 )
+                process.communicate(input=text)
             else:
+                # X11: Set BOTH PRIMARY (for Shift+Insert) and CLIPBOARD (for Ctrl+V)
+                # PRIMARY selection - used by Shift+Insert paste
+                process = subprocess.Popen(
+                    ["xclip", "-selection", "primary"],
+                    stdin=subprocess.PIPE,
+                    text=True
+                )
+                process.communicate(input=text)
+
+                # CLIPBOARD selection - used by Ctrl+V paste
                 process = subprocess.Popen(
                     ["xclip", "-selection", "clipboard"],
                     stdin=subprocess.PIPE,
                     text=True
                 )
+                process.communicate(input=text)
 
-            process.communicate(input=text)
             return True
         except FileNotFoundError:
             self.statusBar().showMessage("❌ Clipboard tool not found (wl-copy or xclip)")
