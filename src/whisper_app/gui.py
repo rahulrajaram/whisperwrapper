@@ -9,6 +9,7 @@ import os
 import signal
 import threading
 import subprocess
+import socket
 from pathlib import Path
 from datetime import datetime
 from typing import List
@@ -27,96 +28,21 @@ except ImportError:
     print("Install with: pip install PyQt6")
     sys.exit(1)
 
+
+class CommandSignalEmitter(QObject):
+    """Signal emitter for safely calling GUI methods from daemon threads"""
+    toggle_signal = pyqtSignal()
+    start_signal = pyqtSignal()
+    stop_signal = pyqtSignal()
+
 from .cli import WhisperCLI
 import re
-
-try:
-    from pynput import keyboard
-except ImportError:
-    keyboard = None
-
 
 def markdown_to_html(text: str) -> str:
     """Convert markdown **bold** to HTML <b>bold</b> for GUI display"""
     # Replace **text** with <b>text</b>
     html_text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
     return html_text
-
-
-class HotkeyListener(QObject):
-    """Global hotkey listener for CTRL+ALT+SHIFT+R to toggle recording"""
-
-    hotkey_pressed = pyqtSignal()  # Emitted when hotkey is detected
-
-    def __init__(self):
-        super().__init__()
-        self.listener = None
-        self.is_listening = False
-
-        if keyboard is None:
-            print("⚠️ Warning: pynput not available, global hotkey support disabled")
-
-    def start(self):
-        """Start listening for global hotkey"""
-        if not keyboard:
-            print("❌ pynput is not installed, hotkey support unavailable")
-            return False
-
-        if self.is_listening:
-            return False
-
-        self.is_listening = True
-        self._keys_pressed = set()  # Initialize key tracking
-        # Start listener in a daemon thread so it doesn't block the application
-        self.listener = keyboard.Listener(on_press=self._on_press, on_release=self._on_release)
-        self.listener.daemon = True
-        self.listener.start()
-        print("✅ Global hotkey listener started (CTRL+ALT+SHIFT+R)")
-        return True
-
-    def stop(self):
-        """Stop listening for global hotkey"""
-        if self.listener and self.is_listening:
-            self.listener.stop()
-            self.is_listening = False
-            print("🛑 Global hotkey listener stopped")
-
-    def _on_press(self, key):
-        """Handle key press events"""
-        try:
-            # Add key to pressed set
-            if hasattr(key, 'char'):
-                self._keys_pressed.add(key.char.lower() if key.char else None)
-            elif hasattr(key, 'name'):
-                self._keys_pressed.add(key.name.lower())
-
-            # Check for CTRL+ALT+SHIFT+R combination
-            has_ctrl = any(k in self._keys_pressed for k in ['ctrl', 'ctrl_l', 'ctrl_r'])
-            has_alt = any(k in self._keys_pressed for k in ['alt', 'alt_l', 'alt_r'])
-            has_shift = any(k in self._keys_pressed for k in ['shift', 'shift_l', 'shift_r'])
-            has_r = 'r' in self._keys_pressed
-
-            if has_ctrl and has_alt and has_shift and has_r:
-                print("🔴 Hotkey CTRL+ALT+SHIFT+R detected!")
-                self.hotkey_pressed.emit()
-                # Clear the pressed keys to avoid repeat signals
-                self._keys_pressed.clear()
-
-        except AttributeError:
-            # Some keys don't have char or name attributes, ignore
-            pass
-
-    def _on_release(self, key):
-        """Handle key release events"""
-        try:
-            # Remove key from pressed set
-            if hasattr(key, 'char'):
-                self._keys_pressed.discard(key.char.lower() if key.char else None)
-            elif hasattr(key, 'name'):
-                self._keys_pressed.discard(key.name.lower())
-
-        except AttributeError:
-            pass
 
 
 class ClickableLabel(QLabel):
@@ -317,9 +243,52 @@ class WhisperGUI(QMainWindow):
         # Row selection state
         self.selected_row = None  # Track which row is currently selected
 
-        # Initialize global hotkey listener
-        self.hotkey_listener = HotkeyListener()
-        self.hotkey_listener.hotkey_pressed.connect(self.on_hotkey_pressed)
+        # Create lock file with GUI PID for hotkey daemon discovery
+        self.lock_file = Path.home() / ".whisper" / "app.lock"
+        self.lock_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(self.lock_file, 'w') as f:
+                f.write(str(os.getpid()))
+            print(f"✅ Created lock file with PID {os.getpid()}: {self.lock_file}")
+        except Exception as e:
+            print(f"⚠️ Could not create lock file: {e}")
+
+        # Create named pipe (FIFO) for receiving commands from external scripts
+        # This is more reliable than signals when running under systemd
+        self.command_pipe_path = Path.home() / ".whisper" / "control.fifo"
+        self.command_pipe_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Remove old pipe if it exists
+        if self.command_pipe_path.exists():
+            try:
+                self.command_pipe_path.unlink()
+            except:
+                pass
+
+        # Create named pipe
+        try:
+            os.mkfifo(str(self.command_pipe_path))
+            print(f"✅ Created control FIFO at {self.command_pipe_path}")
+        except FileExistsError:
+            print(f"⚠️  Control FIFO already exists: {self.command_pipe_path}")
+        except Exception as e:
+            print(f"❌ Error creating control FIFO: {e}")
+
+        # Create signal emitter for safe thread-to-Qt communication
+        self.command_emitter = CommandSignalEmitter()
+        self.command_emitter.toggle_signal.connect(self._on_toggle_command)
+        self.command_emitter.start_signal.connect(self.start_recording)
+        self.command_emitter.stop_signal.connect(self.stop_recording)
+
+        # Start a thread to listen for commands on the FIFO
+        self.command_reader_thread = threading.Thread(target=self._read_commands, daemon=True)
+        self.command_reader_thread.start()
+        print("✅ Command reader thread started")
+
+        # Recording control is now handled via Unix signals (SIGUSR1/SIGUSR2/SIGALRM)
+        # External programs can control recording via: whisper-recording-toggle toggle/start/stop
+        # KDE shortcuts invoke whisper-recording-toggle, which sends signals to this process
+        # This approach is Wayland-compatible and has zero dependencies
 
         # Setup UI
         self.setup_ui()
@@ -327,9 +296,6 @@ class WhisperGUI(QMainWindow):
 
         # Setup system tray
         self.setup_tray()
-
-        # Start global hotkey listener
-        self.hotkey_listener.start()
 
     def setup_ui(self):
         """Create the user interface"""
@@ -655,6 +621,45 @@ class WhisperGUI(QMainWindow):
         # Exit the application via sys.exit (bypasses closeEvent)
         sys.exit(0)
 
+    def _on_toggle_command(self):
+        """Handle toggle command - dynamically choose start or stop based on current state"""
+        if self.is_recording:
+            self.stop_recording()
+        else:
+            self.start_recording()
+
+    def _read_commands(self):
+        """Read and process commands from the control FIFO"""
+        print(f"📡 Command reader thread listening on {self.command_pipe_path}")
+        while True:
+            try:
+                # Open FIFO for reading (blocks until data is available)
+                with open(str(self.command_pipe_path), 'r') as fifo:
+                    command = fifo.read().strip()
+                    if not command:
+                        continue
+
+                    sys.stderr.write(f"🔔 Received command: {command}\n")
+                    sys.stderr.flush()
+
+                    # Emit Qt signals to safely invoke recording methods in the main thread
+                    if command == "toggle":
+                        self.command_emitter.toggle_signal.emit()
+                    elif command == "start":
+                        self.command_emitter.start_signal.emit()
+                    elif command == "stop":
+                        self.command_emitter.stop_signal.emit()
+                    else:
+                        sys.stderr.write(f"❌ Unknown command: {command}\n")
+                        sys.stderr.flush()
+
+            except Exception as e:
+                sys.stderr.write(f"❌ Error reading commands: {e}\n")
+                sys.stderr.flush()
+                # Continue listening even on errors
+                import time
+                time.sleep(0.1)
+
     def on_terminal_button_clicked(self):
         """Open Xfce terminal in the Whisper project directory"""
         import shutil
@@ -810,12 +815,6 @@ class WhisperGUI(QMainWindow):
         self.status_label.setText("⏳ Processing transcription...")
         self.stop_button.setEnabled(False)
 
-    def on_hotkey_pressed(self):
-        """Handle global hotkey (CTRL+ALT+SHIFT+R) to toggle recording"""
-        if self.is_recording:
-            self.stop_recording()
-        else:
-            self.start_recording()
 
     def on_recording_finished(self):
         """Handle recording completion"""
@@ -1125,8 +1124,14 @@ class WhisperGUI(QMainWindow):
         if self.is_recording:
             self.whisper.stop_recording()
 
-        # Stop the hotkey listener
-        self.hotkey_listener.stop()
+        # Clean up lock file (if closing app completely)
+        # Note: lock file is only removed on actual app exit, not on window hide
+        if hasattr(self, 'lock_file') and self.lock_file.exists():
+            try:
+                self.lock_file.unlink()
+                print(f"✅ Cleaned up lock file: {self.lock_file}")
+            except Exception as e:
+                print(f"⚠️ Error removing lock file: {e}")
 
         # Just hide the window, don't exit the app
         # The app continues running in the system tray

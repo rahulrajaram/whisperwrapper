@@ -15,7 +15,7 @@ Environment="PATH=/home/rahul/Documents/whisper/venv/bin"
 Environment="PYTHONPATH=/home/rahul/Documents/whisper/src"
 Environment="PYTHONUNBUFFERED=1"
 Environment="QT_QPA_PLATFORMTHEME=kde"
-Environment="QT_QPA_PLATFORM=wayland;xcb"
+Environment="QT_QPA_PLATFORM=xcb"
 
 [Install]
 WantedBy=graphical-session.target

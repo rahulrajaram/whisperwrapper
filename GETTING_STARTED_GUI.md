@@ -132,6 +132,29 @@ sudo apt-get install xclip
 python3 -u ~/Documents/whisper/whisper_gui.py 2>&1 | head -20
 ```
 
+### "Recording works but transcription fails with ffmpeg error"
+When running the GUI as a systemd user service, ffmpeg may not be found even if installed.
+
+**Solution:** Update the systemd service file to include system paths in PATH environment variable.
+
+Edit `~/.config/systemd/user/whisper-gui.service` and change:
+```ini
+Environment="PATH=/home/rahul/Documents/whisper/venv/bin"
+```
+
+To:
+```ini
+Environment="PATH=/home/rahul/Documents/whisper/venv/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+```
+
+Then reload and restart:
+```bash
+systemctl --user daemon-reload
+systemctl --user restart whisper-gui.service
+```
+
+**Why:** The Whisper model uses ffmpeg to process audio files. Without the system paths in PATH, ffmpeg (located at `/usr/bin/ffmpeg`) cannot be found by the service.
+
 ---
 
 ## Tips & Tricks
