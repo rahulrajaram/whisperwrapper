@@ -27,6 +27,28 @@ except ImportError:
     sys.exit(1)
 
 from whisper_cli import WhisperCLI
+import re
+
+
+def markdown_to_html(text: str) -> str:
+    """Convert markdown **bold** to HTML <b>bold</b> for GUI display"""
+    # Replace **text** with <b>text</b>
+    html_text = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', text)
+    return html_text
+
+
+class ClickableLabel(QLabel):
+    """Custom QLabel that emits a signal when clicked"""
+    clicked = pyqtSignal(int)  # Emits row index
+
+    def __init__(self, text, row_index, parent=None):
+        super().__init__(text, parent)
+        self.row_index = row_index
+
+    def mousePressEvent(self, event):
+        """Emit clicked signal with row index when label is clicked"""
+        self.clicked.emit(self.row_index)
+        super().mousePressEvent(event)
 
 
 class RecordingWorker(QObject):
@@ -66,6 +88,84 @@ class RecordingWorker(QObject):
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
+            self.finished.emit()
+
+
+class CodexWorker(QObject):
+    """Worker thread for Claude CLI processing"""
+
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
+    result = pyqtSignal(str, int)  # Emits (processed text, row index)
+
+    def __init__(self, text: str, row_index: int = 0):
+        super().__init__()
+        self.text = text
+        self.row_index = row_index
+
+    def run(self):
+        """Execute Claude processing in a worker thread"""
+        try:
+            # Create a strict prompt for Claude - demand only the output text
+            prompt = f"""IMPORTANT: Return ONLY the processed text. No explanations, no preamble, no extra text.
+
+Process this transcription:
+- Highlight the most important keywords (up to 10% of text) with **keyword** format
+- Fix any obvious typos
+- Return ONLY the processed text, nothing else
+
+Transcription:
+{self.text}"""
+
+            # Call Claude CLI directly (no filesystem exploration like codex exec does)
+            process = subprocess.Popen(
+                ["claude"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+
+            stdout, stderr = process.communicate(input=prompt, timeout=60)
+
+            if process.returncode == 0 and stdout:
+                # Process the output - Claude might add some explanation, extract the relevant line
+                output = stdout.strip()
+
+                # Try to find the actual processed text (look for a line starting with capital letter that's not "Hi" alone)
+                # Usually Claude's output has the processed text as the last substantial line
+                lines = output.split('\n')
+
+                # Find the line that looks like processed text (contains keywords with ** or has reasonable content)
+                processed_text = None
+                for line in reversed(lines):
+                    line = line.strip()
+                    if line and ('**' in line or (len(line) > 10 and any(c.isupper() for c in line))):
+                        processed_text = line
+                        break
+
+                # If we found a good line, use it; otherwise use the whole output
+                if processed_text:
+                    self.result.emit(processed_text, self.row_index)
+                else:
+                    self.result.emit(output, self.row_index)
+            else:
+                error_msg = stderr if stderr else "Unknown error from Claude"
+                self.error.emit(f"Claude processing failed: {error_msg}")
+
+            self.finished.emit()
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except:
+                pass
+            self.error.emit("Claude processing timed out (exceeded 60 seconds).")
+            self.finished.emit()
+        except FileNotFoundError:
+            self.error.emit("Claude CLI not found. Is it installed and in PATH?")
+            self.finished.emit()
+        except Exception as e:
+            self.error.emit(f"Error processing with Claude: {str(e)}")
             self.finished.emit()
 
 
@@ -218,6 +318,39 @@ class WhisperGUI(QMainWindow):
         self.clear_button.clicked.connect(self.clear_history)
         button_layout.addWidget(self.clear_button)
 
+        self.codex_button = QPushButton("✨")
+        self.codex_button.setToolTip("Process with Claude (highlight keywords & fix typos)")
+        self.codex_button_style_normal = """
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+                min-width: 50px;
+                min-height: 50px;
+                font-size: 24px;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+        """
+        self.codex_button_style_processing = """
+            QPushButton {
+                background-color: #cccccc;
+                color: #888888;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+                min-width: 50px;
+                min-height: 50px;
+                font-size: 24px;
+            }
+        """
+        self.codex_button.setStyleSheet(self.codex_button_style_normal)
+        self.codex_button.clicked.connect(self.on_codex_button_clicked)
+        button_layout.addWidget(self.codex_button)
+
         button_layout.addStretch()
         main_layout.addLayout(button_layout)
 
@@ -339,10 +472,14 @@ class WhisperGUI(QMainWindow):
             timestamp_item.setFlags(timestamp_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.history_table.setItem(row, 0, timestamp_item)
 
-            # Transcription column
-            text_item = QTableWidgetItem(item["text"])
-            text_item.setFlags(text_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.history_table.setItem(row, 1, text_item)
+            # Transcription column - use a clickable label with HTML rich text to render bold formatting
+            html_text = markdown_to_html(item["text"])
+            text_label = ClickableLabel(html_text, row)
+            text_label.setWordWrap(True)
+            text_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            # Connect to a wrapper that converts (row) to (row, column)
+            text_label.clicked.connect(lambda r: self.on_table_cell_clicked(r, 1))
+            self.history_table.setCellWidget(row, 1, text_label)
 
             # Copy button column
             copy_button = QPushButton("Copy")
@@ -519,6 +656,66 @@ class WhisperGUI(QMainWindow):
                 json.dump(self.history, f, indent=2)
         except Exception as e:
             print(f"⚠️ Could not save history: {e}")
+
+    def on_codex_button_clicked(self):
+        """Handle codex processing button click"""
+        # If a row is selected, process that item
+        if self.selected_row is not None and self.selected_row < len(self.history):
+            text_to_process = self.history[self.selected_row]["text"]
+            row_to_update = self.selected_row
+        else:
+            # Otherwise, use the most recent transcription
+            if self.history:
+                text_to_process = self.history[0]["text"]
+                row_to_update = 0
+            else:
+                self.statusBar().showMessage("❌ No transcriptions to process")
+                return
+
+        # Start codex processing
+        self.status_label.setText("⏳ Processing with Claude...")
+        self.codex_button.setStyleSheet(self.codex_button_style_processing)
+        self.codex_button.setEnabled(False)
+
+        # Start processing in a worker thread
+        self.codex_worker = CodexWorker(text_to_process, row_to_update)
+        self.codex_thread = QThread()
+
+        self.codex_worker.moveToThread(self.codex_thread)
+        self.codex_thread.started.connect(self.codex_worker.run)
+        self.codex_worker.finished.connect(self.on_codex_finished)
+        self.codex_worker.result.connect(self.on_codex_result)
+        self.codex_worker.error.connect(self.on_codex_error)
+
+        self.codex_thread.start()
+
+    def on_codex_result(self, processed_text: str, row_index: int):
+        """Handle successful codex processing"""
+        # Update the history with the processed text
+        if row_index < len(self.history):
+            self.history[row_index]["text"] = processed_text
+            # Save the updated history
+            self.save_history()
+            # Refresh the table to show the updated text
+            self.refresh_history_table()
+
+        # Copy the processed text to clipboard
+        self._copy_text_to_clipboard(processed_text)
+
+        self.status_label.setText(f"✨ Processed with Claude (copied to clipboard)")
+        self.statusBar().showMessage("✨ Claude processing complete - transcription updated")
+
+    def on_codex_error(self, error_msg: str):
+        """Handle codex processing error"""
+        self.status_label.setText(f"❌ Error: {error_msg}")
+        self.statusBar().showMessage(f"❌ Claude error: {error_msg}")
+
+    def on_codex_finished(self):
+        """Handle codex processing completion"""
+        self.codex_button.setStyleSheet(self.codex_button_style_normal)
+        self.codex_button.setEnabled(True)
+        self.codex_thread.quit()
+        self.codex_thread.wait()
 
     def closeEvent(self, event):
         """Handle application close"""
