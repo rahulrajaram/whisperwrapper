@@ -20,6 +20,7 @@ try:
     )
     from PyQt6.QtCore import Qt, pyqtSignal, QObject, QThread
     from PyQt6.QtGui import QColor, QFont
+    from PyQt6.QtWidgets import QHeaderView
 except ImportError:
     print("❌ PyQt6 is not installed!")
     print("Install with: pip install PyQt6")
@@ -116,15 +117,18 @@ class WhisperGUI(QMainWindow):
         # Control buttons layout
         button_layout = QHBoxLayout()
 
-        self.start_button = QPushButton("▶ Start Recording")
-        self.start_button.setStyleSheet("""
+        self.start_button = QPushButton("▶")
+        self.start_button.setToolTip("Start Recording")
+        self.start_button_style_normal = """
             QPushButton {
                 background-color: #4CAF50;
                 color: white;
                 font-weight: bold;
                 padding: 10px;
                 border-radius: 5px;
-                min-width: 150px;
+                min-width: 50px;
+                min-height: 50px;
+                font-size: 24px;
             }
             QPushButton:hover {
                 background-color: #45a049;
@@ -132,11 +136,31 @@ class WhisperGUI(QMainWindow):
             QPushButton:pressed {
                 background-color: #3d8b40;
             }
-        """)
+        """
+        self.start_button_style_recording = """
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+                min-width: 50px;
+                min-height: 50px;
+                font-size: 24px;
+                border: 3px solid #45a049;
+                box-shadow: 0 0 20px #4CAF50, inset 0 0 20px rgba(76, 175, 80, 0.5);
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+                box-shadow: 0 0 25px #4CAF50, inset 0 0 25px rgba(76, 175, 80, 0.6);
+            }
+        """
+        self.start_button.setStyleSheet(self.start_button_style_normal)
         self.start_button.clicked.connect(self.start_recording)
         button_layout.addWidget(self.start_button)
 
-        self.stop_button = QPushButton("⏹ Stop Recording")
+        self.stop_button = QPushButton("⏹")
+        self.stop_button.setToolTip("Stop Recording")
         self.stop_button.setStyleSheet("""
             QPushButton {
                 background-color: #f44336;
@@ -144,7 +168,9 @@ class WhisperGUI(QMainWindow):
                 font-weight: bold;
                 padding: 10px;
                 border-radius: 5px;
-                min-width: 150px;
+                min-width: 50px;
+                min-height: 50px;
+                font-size: 24px;
             }
             QPushButton:hover {
                 background-color: #da190b;
@@ -157,7 +183,8 @@ class WhisperGUI(QMainWindow):
         self.stop_button.setEnabled(False)
         button_layout.addWidget(self.stop_button)
 
-        self.clear_button = QPushButton("🗑 Clear History")
+        self.clear_button = QPushButton("🗑")
+        self.clear_button.setToolTip("Clear History")
         self.clear_button.setStyleSheet("""
             QPushButton {
                 background-color: #FF9800;
@@ -165,6 +192,9 @@ class WhisperGUI(QMainWindow):
                 font-weight: bold;
                 padding: 10px;
                 border-radius: 5px;
+                min-width: 50px;
+                min-height: 50px;
+                font-size: 24px;
             }
             QPushButton:hover {
                 background-color: #e68900;
@@ -193,6 +223,13 @@ class WhisperGUI(QMainWindow):
         self.history_table.setColumnWidth(0, 180)
         self.history_table.setColumnWidth(1, 550)
         self.history_table.setColumnWidth(2, 80)
+        # Enable word wrapping for multi-line text display
+        self.history_table.setWordWrap(True)
+        # Set minimum row height and enable resizing
+        self.history_table.verticalHeader().setDefaultSectionSize(60)
+        self.history_table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
         main_layout.addWidget(self.history_table)
 
         # Status bar
@@ -205,6 +242,8 @@ class WhisperGUI(QMainWindow):
             return
 
         self.is_recording = True
+        # Apply glowing style to start button
+        self.start_button.setStyleSheet(self.start_button_style_recording)
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.status_label.setText("🎤 Recording... (Press Stop when done)")
@@ -234,6 +273,8 @@ class WhisperGUI(QMainWindow):
     def on_recording_finished(self):
         """Handle recording completion"""
         self.is_recording = False
+        # Restore normal button style
+        self.start_button.setStyleSheet(self.start_button_style_normal)
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.recording_thread.quit()
