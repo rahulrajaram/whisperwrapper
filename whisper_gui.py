@@ -94,6 +94,9 @@ class WhisperGUI(QMainWindow):
         self.is_recording = False
         self.recording_thread = None
 
+        # Row selection state
+        self.selected_row = None  # Track which row is currently selected
+
         # Setup UI
         self.setup_ui()
         self.refresh_history_table()
@@ -230,11 +233,12 @@ class WhisperGUI(QMainWindow):
         main_layout.addWidget(history_label)
 
         self.history_table = QTableWidget()
-        self.history_table.setColumnCount(3)
-        self.history_table.setHorizontalHeaderLabels(["Timestamp", "Transcription", "Copy"])
+        self.history_table.setColumnCount(4)
+        self.history_table.setHorizontalHeaderLabels(["Timestamp", "Transcription", "Copy", "Lock"])
         self.history_table.setColumnWidth(0, 180)
         self.history_table.setColumnWidth(1, 550)
-        self.history_table.setColumnWidth(2, 80)
+        self.history_table.setColumnWidth(2, 60)
+        self.history_table.setColumnWidth(3, 60)
         # Enable word wrapping for multi-line text display
         self.history_table.setWordWrap(True)
         # Set minimum row height and enable resizing
@@ -242,6 +246,8 @@ class WhisperGUI(QMainWindow):
         self.history_table.verticalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents
         )
+        # Connect row selection signal
+        self.history_table.cellClicked.connect(self.on_table_cell_clicked)
         main_layout.addWidget(self.history_table)
 
         # Status bar
@@ -301,10 +307,14 @@ class WhisperGUI(QMainWindow):
         # Add to history
         item = {
             "timestamp": timestamp,
-            "text": transcription_text
+            "text": transcription_text,
+            "protected": False  # New recordings are not protected by default
         }
         self.history.insert(0, item)  # Add to beginning for newest first
         self.save_history()
+
+        # Deselect any previously selected row when new recording is made
+        self.selected_row = None
 
         # Automatically copy to clipboard
         self._copy_text_to_clipboard(transcription_text)
@@ -350,6 +360,48 @@ class WhisperGUI(QMainWindow):
             copy_button.clicked.connect(lambda checked, r=row: self.copy_to_clipboard(r))
             self.history_table.setCellWidget(row, 2, copy_button)
 
+            # Lock/Delete button column - shows delete if row is selected, lock otherwise
+            if self.selected_row == row:
+                # Show delete button for selected row (overrides protection)
+                delete_button = QPushButton("🗑 Delete")
+                delete_button.setToolTip("Delete this item (overrides protection)")
+                delete_button.setStyleSheet("""
+                    QPushButton {
+                        background-color: #f44336;
+                        color: white;
+                        padding: 5px;
+                        border-radius: 3px;
+                        font-size: 12px;
+                    }
+                    QPushButton:hover {
+                        background-color: #da190b;
+                    }
+                    QPushButton:pressed {
+                        background-color: #ba0000;
+                    }
+                """)
+                delete_button.clicked.connect(lambda checked, r=row: self.delete_history_item(r))
+                self.history_table.setCellWidget(row, 3, delete_button)
+            else:
+                # Show lock/unlock button for unselected rows
+                is_protected = item.get("protected", False)
+                lock_button = QPushButton("🔓" if is_protected else "🔒")
+                lock_button.setToolTip("Protected - Click to unprotect" if is_protected else "Unprotected - Click to protect")
+                lock_button.setStyleSheet("""
+                    QPushButton {
+                        background-color: """ + ("#FF9800" if is_protected else "#999999") + """;
+                        color: white;
+                        padding: 5px;
+                        border-radius: 3px;
+                        font-size: 14px;
+                    }
+                    QPushButton:hover {
+                        background-color: """ + ("#FFB74D" if is_protected else "#666666") + """;
+                    }
+                """)
+                lock_button.clicked.connect(lambda checked, r=row: self.toggle_protection(r))
+                self.history_table.setCellWidget(row, 3, lock_button)
+
     def _copy_text_to_clipboard(self, text: str) -> bool:
         """
         Copy text to clipboard (helper method)
@@ -390,13 +442,65 @@ class WhisperGUI(QMainWindow):
             if self._copy_text_to_clipboard(text):
                 self.statusBar().showMessage(f"✅ Copied to clipboard: {text[:40]}...")
 
+    def toggle_protection(self, row: int):
+        """Toggle delete protection for a history item"""
+        if row < len(self.history):
+            item = self.history[row]
+            is_protected = item.get("protected", False)
+            item["protected"] = not is_protected
+            self.save_history()
+            self.refresh_history_table()
+
+            status = "🔒 Protected" if item["protected"] else "🔓 Unprotected"
+            text_preview = item["text"][:40]
+            self.statusBar().showMessage(f"{status}: {text_preview}...")
+
+    def on_table_cell_clicked(self, row: int, column: int):
+        """Handle table cell clicks to select rows"""
+        # Clicking on any cell in a row selects that row
+        if self.selected_row == row:
+            # Clicking the selected row again deselects it
+            self.selected_row = None
+            self.statusBar().showMessage("Row deselected")
+        else:
+            # Select the new row
+            self.selected_row = row
+            text_preview = self.history[row]["text"][:50] if row < len(self.history) else ""
+            self.statusBar().showMessage(f"Row selected (click delete button to remove): {text_preview}...")
+
+        self.refresh_history_table()
+
+    def delete_history_item(self, row: int):
+        """Delete a history item, overriding protection"""
+        if row < len(self.history):
+            deleted_item = self.history.pop(row)
+            self.save_history()
+            self.selected_row = None  # Deselect after deletion
+            self.refresh_history_table()
+
+            text_preview = deleted_item["text"][:40]
+            self.statusBar().showMessage(f"🗑 Deleted: {text_preview}...")
+            self.status_label.setText(f"✅ Item deleted: {text_preview}...")
+
     def clear_history(self):
-        """Clear all history"""
-        self.history = []
+        """Clear all history except protected items"""
+        # Keep only protected items
+        protected_items = [item for item in self.history if item.get("protected", False)]
+        deleted_count = len(self.history) - len(protected_items)
+        self.history = protected_items
         self.save_history()
         self.refresh_history_table()
-        self.status_label.setText("🗑 History cleared")
-        self.statusBar().showMessage("History cleared")
+
+        if deleted_count > 0:
+            if protected_items:
+                self.status_label.setText(f"🗑 Deleted {deleted_count} items ({len(protected_items)} protected)")
+                self.statusBar().showMessage(f"History cleared: {deleted_count} deleted, {len(protected_items)} protected items retained")
+            else:
+                self.status_label.setText("🗑 History cleared")
+                self.statusBar().showMessage("History cleared")
+        else:
+            self.status_label.setText("🔒 All items are protected")
+            self.statusBar().showMessage("Cannot clear history: all items are protected")
 
     def load_history(self):
         """Load history from file"""
