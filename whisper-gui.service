@@ -5,12 +5,14 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/home/rahul/Documents/whisper/venv/bin/python3 /home/rahul/Documents/whisper/whisper_gui.py
+WorkingDirectory=/home/rahul/Documents/whisper
+ExecStart=/home/rahul/Documents/whisper/venv/bin/python3 -m whisper_app
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
 Environment="PATH=/home/rahul/Documents/whisper/venv/bin"
+Environment="PYTHONPATH=/home/rahul/Documents/whisper/src"
 Environment="PYTHONUNBUFFERED=1"
 Environment="QT_QPA_PLATFORMTHEME=kde"
 Environment="QT_QPA_PLATFORM=wayland;xcb"

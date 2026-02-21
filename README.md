@@ -1,243 +1,269 @@
-# Whisper - Real-time Speech-to-Text
+# Whisper App
 
-A speech-to-text system with both **CLI** and **GUI** interfaces using OpenAI's Whisper.
-
-## Quick Start
-
-### GUI Application (Recommended)
-
-```bash
-# Install PyQt6
-pip install PyQt6
-
-# Run the GUI
-./whisper_gui.py
-```
-
-Or use the launcher:
-```bash
-./launch_gui.sh
-```
-
-### CLI Application
-
-```bash
-# Install dependencies
-./setup.sh
-
-# Run standalone CLI
-./whisper
-
-# Or run without ALSA warnings
-python whisper_cli.py 2>/dev/null
-```
+OpenAI Whisper voice recording application with system tray GUI and GPU acceleration.
 
 ## Features
 
-### GUI Application (whisper_gui.py)
-- ✅ Native PyQt6 desktop application
-- ✅ One-click Start/Stop recording
-- ✅ Scrollable history of all transcriptions
-- ✅ Copy-to-clipboard for any transcription
-- ✅ Persistent history (saved to JSON)
-- ✅ Beautiful, intuitive interface
-- ✅ Desktop entry for app menu integration
+- 🎤 Real-time audio recording with visual feedback
+- 🤖 GPU-accelerated transcription using OpenAI Whisper
+- 🖥️ System tray integration for KDE/Wayland
+- 📝 Transcription history management
+- ✨ Optional Claude AI processing for text cleanup
+- ⚙️ Microphone configuration via GUI
+- 🔒 Singleton pattern (prevents multiple instances)
+- 🐛 Comprehensive debug logging
 
-### CLI Application (whisper_cli.py)
-- ✅ Real-time audio recording from microphone
-- ✅ OpenAI Whisper integration for speech-to-text
-- ✅ Interactive CLI with ENTER to start/stop recording
-- ✅ Microphone selection from available input devices
-- ✅ Clean output without ALSA/JACK warnings
-- ✅ **REPL integration for Claude CLI, Codex, etc.**
-- ✅ Persistent microphone selection
+## Project Structure
 
-## GUI Usage
-
-### Launch Options
-
-1. **Via launcher script**: `./launch_gui.sh`
-2. **Direct execution**: `./whisper_gui.py`
-3. **Python**: `python3 whisper_gui.py`
-4. **Application Menu**: Search for "Whisper Voice Recording"
-
-### GUI Features in Detail
-
-- **Start Button**: Click to begin recording
-- **Stop Button**: Click to end recording and transcribe
-- **History Table**: Shows all past transcriptions with timestamps
-- **Copy Button**: Copy any transcription to clipboard with one click
-- **Clear History**: Remove all entries and start fresh
-- **Status Bar**: Real-time feedback on recording/processing status
-
-For complete documentation, see: **[WHISPER_GUI_README.md](WHISPER_GUI_README.md)**
-
-For quick setup, see: **[SETUP_GUI.md](SETUP_GUI.md)**
-
-## REPL Integration
-
-### Option 1: Simple Function Integration
-
-Add to your existing CLI:
-
-```python
-# Add to your CLI imports
-from whisper_recorder import handle_voice_command
-
-# In your command handler
-if user_input == '/voice':
-    voice_text = handle_voice_command()
-    if voice_text:
-        # Process voice_text as if user typed it
-        self.process_input(voice_text)
 ```
-
-### Option 2: Drop-in Claude CLI Integration
-
-```python
-# In your Claude CLI main loop
-if user_input == '/voice':
-    from claude_integration import handle_voice_command
-    voice_text = handle_voice_command()
-    if voice_text:
-        user_input = voice_text
-        # Continue processing as normal
+whisper/
+├── src/
+│   └── whisper_app/
+│       ├── __init__.py          # Package initialization
+│       ├── cli.py               # WhisperCLI (audio recording & transcription)
+│       ├── gui.py               # WhisperGUI (PyQt6 interface)
+│       └── __main__.py          # Entry point for package execution
+├── tests/
+│   ├── __init__.py
+│   ├── test_gui.py              # Unit tests for GUI with mocks
+│   └── test_cli.py              # Unit tests for CLI with mocks
+├── pyproject.toml               # Package configuration (PEP 517/518)
+├── setup.py                     # Backward compatible setup
+├── requirements.txt             # Dependencies
+└── README.md                    # This file
 ```
-
-### Option 3: Proxy Mode
-
-Run as a proxy that adds voice to any CLI:
-
-```bash
-# For Claude CLI
-python claude_integration.py
-
-# For general example
-python integration_example.py
-```
-
-## Voice Commands in REPLs
-
-Once integrated, you can use these shortcuts:
-
-- `/voice` - Toggle recording (start/stop)
-- `/mic` - Select microphone
-- `/help` - Show help
-
-## Workflow
-
-1. **First time**: Select your microphone (saved to `~/.whisper_config.json`)
-2. **In REPL**: Type `/voice` to start recording
-3. **Speak**: Say what you want to transcribe
-4. **Stop**: Type `/voice` again to stop and transcribe
-5. **Result**: Transcribed text is sent to your CLI as if you typed it
-
-## Configuration
-
-- Microphone selection is persistent (saved to `~/.whisper_config.json`)
-- Model size can be configured (`tiny`, `base`, `small`, `medium`, `large`)
-- Audio settings are optimized for real-time use
-
-## Files
-
-### GUI Application
-- `whisper_gui.py` - Main PyQt6 GUI application
-- `launch_gui.sh` - Launcher script with auto-dependency check
-- `whisper-gui.desktop` - Desktop entry for app menu
-- `WHISPER_GUI_README.md` - Complete GUI documentation
-- `SETUP_GUI.md` - Quick GUI setup guide
-
-### CLI Application
-- `whisper_cli.py` - Standalone CLI application
-- `whisper` - Clean wrapper script (suppresses ALSA warnings)
-- `whisper_recorder.py` - Reusable module for integration
-- `claude_integration.py` - Drop-in Claude CLI integration
-- `integration_example.py` - Example REPL with voice support
-
-## Requirements
-
-### Minimum (CLI only)
-- Python 3.7+
-- PyAudio (for microphone access)
-- OpenAI Whisper
-- NumPy
-
-### For GUI Application
-- Python 3.7+
-- PyQt6 (for GUI framework)
-- All of the above
-
-### Clipboard Support (Optional)
-- For Wayland: `wl-clipboard` (usually pre-installed)
-- For X11: `xclip` (install with `sudo apt-get install xclip`)
 
 ## Installation
 
+### Prerequisites
+
+- Python 3.8 or higher
+- CUDA-capable GPU (optional, falls back to CPU)
+- ffmpeg (required for audio processing)
+- PortAudio (for PyAudio)
+
+### System Dependencies (Debian/Ubuntu)
+
 ```bash
-# Clone or download this directory
-cd whisper
+sudo apt-get update
+sudo apt-get install -y ffmpeg portaudio19-dev python3-dev
+```
 
-# Install system dependencies (Ubuntu/Debian)
-sudo apt-get install portaudio19-dev python3-pyaudio
+### Install Package
 
-# Install Python dependencies
-pip install -r requirements.txt
+#### Development Installation (Editable)
 
-# Test the installation
-./whisper
+```bash
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install in editable mode
+pip install -e .
+
+# Or install with development dependencies
+pip install -e ".[dev]"
+```
+
+#### Production Installation
+
+```bash
+pip install .
+```
+
+## Usage
+
+### Running the GUI
+
+```bash
+# If installed via pip
+whisper-gui
+
+# Or run as module
+python -m whisper_app
+
+# Or from source
+cd /path/to/whisper
+source venv/bin/activate
+python -m whisper_app
+```
+
+### Running as Systemd Service
+
+The application runs automatically on login via systemd user service.
+
+```bash
+# Enable service
+systemctl --user enable whisper-gui.service
+
+# Start service
+systemctl --user start whisper-gui.service
+
+# Check status
+systemctl --user status whisper-gui.service
+
+# View logs
+journalctl --user -u whisper-gui.service -f
+```
+
+### Configuration
+
+Configuration is stored in `~/.whisper/`:
+- `config` - Microphone device selection
+- `history.json` - Transcription history
+- `app.lock` - Singleton lock file
+
+## Development
+
+### Running Tests
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=whisper_app --cov-report=html
+
+# Run specific test file
+pytest tests/test_gui.py
+
+# Run specific test class
+pytest tests/test_gui.py::TestWhisperGUIInitialization
+
+# Run specific test
+pytest tests/test_gui.py::TestWhisperGUIInitialization::test_gui_initialization
+```
+
+### Code Quality
+
+```bash
+# Format code with black
+black src/ tests/
+
+# Sort imports with isort
+isort src/ tests/
+
+# Lint with flake8
+flake8 src/ tests/
+
+# Type check with mypy
+mypy src/
+```
+
+### Project Structure Guidelines
+
+- **src layout**: Modern Python package structure (PEP 420)
+- **Tests**: Comprehensive unit tests with mocks for all components
+- **Type hints**: Optional but recommended for public APIs
+- **Documentation**: Docstrings for all public classes and methods
+
+## Architecture
+
+### CLI Module (`cli.py`)
+
+- **WhisperCLI**: Core audio recording and transcription logic
+- CUDA detection and device selection
+- PyAudio stream management
+- Whisper model integration
+- Audio buffer handling
+- Configuration management
+
+### GUI Module (`gui.py`)
+
+- **WhisperGUI**: Main PyQt6 application window
+- **RecordingThread**: Asynchronous recording worker
+- **CodexWorker**: Claude AI integration for text processing
+- System tray integration
+- History management
+- Settings dialog
+
+### Key Design Patterns
+
+- **Singleton**: Prevents multiple instances via file locking
+- **Threading**: Separate threads for recording and transcription
+- **Signal/Slot**: PyQt6 signal/slot for async communication
+- **Dependency Injection**: Mocked dependencies in tests
+
+## GPU Acceleration
+
+The application automatically detects CUDA availability:
+
+```python
+device = "cuda" if torch.cuda.is_available() else "cpu"
+model = whisper.load_model("medium", device=device)
+```
+
+To verify GPU usage:
+
+```bash
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
 ```
 
 ## Troubleshooting
 
-### ALSA Warnings
-Use the wrapper script: `./whisper` or redirect stderr: `python whisper_cli.py 2>/dev/null`
+### No Audio Data Recorded
 
-### Microphone Issues
-1. Run `./whisper` and select your microphone
-2. Check `python -c "import pyaudio; pa = pyaudio.PyAudio(); print(pa.get_device_count())"`
-3. Ensure microphone permissions are granted
+- Check microphone selection in settings (⚙️ button)
+- Verify microphone permissions
+- Check `journalctl --user -u whisper-gui.service` for errors
 
-### Integration Issues
-1. Make sure `whisper_recorder.py` is in your Python path
-2. Test with `python integration_example.py` first
-3. Check that your CLI can import the integration modules
+### ffmpeg Not Found
 
-## Examples
+The systemd service PATH must include system directories:
 
-### Standalone Use
-```bash
-$ ./whisper
-🤖 Loading Whisper model...
-
-🎤 Available input devices:
-  0: Built-in Microphone (DEFAULT)
-  1: USB Headset
-
-Select microphone (0-1, or press ENTER for default): 1
-🎯 Selected: USB Headset
-
-🎙️  Whisper Real-time CLI
-==============================
-
-Press ENTER to start recording (or 'quit' to exit): 
-🎤 Recording started... Press ENTER to stop.
-
-⏹️  Recording stopped. Processing...
-🤖 Transcribing...
-
-📝 Transcription:
-   Hello, this is a test of the whisper speech to text system.
+```ini
+Environment="PATH=/path/to/venv/bin:/usr/local/bin:/usr/bin:/bin"
 ```
 
-### In Claude CLI
-```bash
-claude> /voice
-🎤 Starting recording... (type /voice again to stop)
+### CUDA Out of Memory
 
-claude> /voice
-⏹️  Stopping recording...
-📝 Transcribed: Write a Python function to calculate fibonacci numbers
-➤ Sending to Claude: Write a Python function to calculate fibonacci numbers
+Switch to smaller model in `src/whisper_app/cli.py`:
 
-[Claude processes the request as if you typed it]
+```python
+self.model = whisper.load_model("base", device=self.device)  # Instead of "medium"
 ```
+
+### Multiple Instances Running
+
+The singleton pattern prevents this, but if needed:
+
+```bash
+rm ~/.whisper/app.lock
+systemctl --user restart whisper-gui.service
+```
+
+## Testing
+
+The test suite uses extensive mocking to avoid dependencies on:
+- Audio hardware
+- GPU/CUDA
+- PyQt6 GUI components
+- OpenAI Whisper models
+
+All external dependencies are mocked for fast, reliable testing.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Write tests for new functionality
+4. Ensure all tests pass: `pytest`
+5. Format code: `black src/ tests/`
+6. Submit pull request
+
+## License
+
+MIT License
+
+## Author
+
+Rahul Rajaram (rahulrajaram2005@gmail.com)
+
+## Acknowledgments
+
+- OpenAI Whisper for speech recognition
+- PyQt6 for GUI framework
+- PyAudio for audio capture
