@@ -1230,18 +1230,19 @@ class WhisperGUI(QMainWindow):
 
     def closeEvent(self, event):
         """Handle window close - minimize to tray instead of exiting"""
-        # If recording is active, stop it
+        # If recording is active, stop it properly using the GUI method (not direct Whisper call)
         if self.is_recording:
-            self.whisper.stop_recording()
+            self.stop_recording()
 
-        # Clean up lock file (if closing app completely)
-        # Note: lock file is only removed on actual app exit, not on window hide
-        if hasattr(self, 'lock_file') and self.lock_file.exists():
-            try:
-                self.lock_file.unlink()
-                print(f"✅ Cleaned up lock file: {self.lock_file}")
-            except Exception as e:
-                print(f"⚠️ Error removing lock file: {e}")
+        # Wait for recording thread to finish before hiding window
+        # This prevents X11/Wayland crashes during window hide
+        if self.recording_thread and self.recording_thread.isRunning():
+            self.recording_thread.quit()
+            self.recording_thread.wait()
+
+        # IMPORTANT: Do NOT delete lock file here - it should only be deleted on actual app exit
+        # The lock file indicates the GUI is still running in the system tray
+        # Only exit_app() and main's finally block should delete the lock file
 
         # Just hide the window, don't exit the app
         # The app continues running in the system tray

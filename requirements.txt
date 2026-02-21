@@ -1,13 +1,43 @@
 # Core dependencies
-openai-whisper>=20230314
-pyaudio>=0.2.11
-numpy>=1.20.0
-PyQt6>=6.0.0
-torch>=1.10.0
+openai-whisper==20250625
+pyaudio==0.2.14
+numpy==2.3.3
+PyQt6==6.10.0
+torch==2.9.0+cu129
+torchaudio==2.9.0+cu129
+torchvision==0.24.0+cu129
 pynput>=1.7.6
-dbus-python>=1.2.16
 
-# Development dependencies
+# Additional dependencies required by core packages
+tqdm==4.67.1
+tiktoken==0.12.0
+numba==0.62.1
+requests==2.32.5
+regex==2025.11.3
+more-itertools==10.8.0
+
+# PyQt6 dependencies
+PyQt6-Qt6==6.10.0
+PyQt6-sip==13.10.2
+
+# CUDA dependencies (for GPU support)
+nvidia-cublas-cu12==12.9.1.4
+nvidia-cuda-cupti-cu12==12.9.79
+nvidia-cuda-nvrtc-cu12==12.9.86
+nvidia-cuda-runtime-cu12==12.9.79
+nvidia-cudnn-cu12==9.10.2.21
+nvidia-cufft-cu12==11.4.1.4
+nvidia-cufile-cu12==1.14.1.1
+nvidia-curand-cu12==10.3.10.19
+nvidia-cusolver-cu12==11.7.5.82
+nvidia-cusparse-cu12==12.5.10.65
+nvidia-cusparselt-cu12==0.7.1
+nvidia-nccl-cu12==2.27.5
+nvidia-nvjitlink-cu12==12.9.86
+nvidia-nvshmem-cu12==3.3.20
+nvidia-nvtx-cu12==12.9.79
+
+# Development dependencies (optional)
 pytest>=7.0.0
 pytest-cov>=3.0.0
 pytest-mock>=3.6.0
