@@ -36,7 +36,10 @@ class CommandSignalEmitter(QObject):
     stop_signal = pyqtSignal()
 
 from .cli import WhisperCLI
+from .ipc_controller import CommandController
+from .fifo_controller import FIFOCommandController
 import re
+from typing import Optional
 
 def markdown_to_html(text: str) -> str:
     """Convert markdown **bold** to HTML <b>bold</b> for GUI display"""
@@ -215,10 +218,15 @@ Transcription:
 class WhisperGUI(QMainWindow):
     """Main GUI window for Whisper voice recording application"""
 
-    def __init__(self):
+    def __init__(self, command_controller: Optional[CommandController] = None):
         super().__init__()
         self.setWindowTitle("Whisper Voice Recording")
         self.setGeometry(100, 100, 900, 600)
+
+        # Initialize command controller (use FIFO by default if not provided)
+        if command_controller is None:
+            command_controller = FIFOCommandController(debug=False)
+        self.command_controller = command_controller
 
         # Initialize Whisper CLI
         try:
@@ -253,37 +261,21 @@ class WhisperGUI(QMainWindow):
         except Exception as e:
             print(f"⚠️ Could not create lock file: {e}")
 
-        # Create named pipe (FIFO) for receiving commands from external scripts
-        # This is more reliable than signals when running under systemd
-        self.command_pipe_path = Path.home() / ".whisper" / "control.fifo"
-        self.command_pipe_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Remove old pipe if it exists
-        if self.command_pipe_path.exists():
-            try:
-                self.command_pipe_path.unlink()
-            except:
-                pass
-
-        # Create named pipe
-        try:
-            os.mkfifo(str(self.command_pipe_path))
-            print(f"✅ Created control FIFO at {self.command_pipe_path}")
-        except FileExistsError:
-            print(f"⚠️  Control FIFO already exists: {self.command_pipe_path}")
-        except Exception as e:
-            print(f"❌ Error creating control FIFO: {e}")
-
         # Create signal emitter for safe thread-to-Qt communication
+        # (used by IPC controller to dispatch commands to main thread)
         self.command_emitter = CommandSignalEmitter()
         self.command_emitter.toggle_signal.connect(self._on_toggle_command)
         self.command_emitter.start_signal.connect(self.start_recording)
         self.command_emitter.stop_signal.connect(self.stop_recording)
 
-        # Start a thread to listen for commands on the FIFO
-        self.command_reader_thread = threading.Thread(target=self._read_commands, daemon=True)
-        self.command_reader_thread.start()
-        print("✅ Command reader thread started")
+        # Start the command controller (handles IPC communication)
+        try:
+            # Wire up the controller callback to emit Qt signals
+            self.command_controller.on_command_received = self._on_ipc_command
+            self.command_controller.start()
+            print(f"✅ Command controller started ({self.command_controller.__class__.__name__})")
+        except Exception as e:
+            print(f"❌ Error starting command controller: {e}")
 
         # Recording control is now handled via Unix signals (SIGUSR1/SIGUSR2/SIGALRM)
         # External programs can control recording via: whisper-recording-toggle toggle/start/stop
@@ -612,6 +604,14 @@ class WhisperGUI(QMainWindow):
             self.recording_thread.quit()
             self.recording_thread.wait()
 
+        # Stop the IPC command controller
+        try:
+            if hasattr(self, 'command_controller') and self.command_controller:
+                self.command_controller.stop()
+                print("✅ Command controller stopped")
+        except Exception as e:
+            print(f"⚠️  Error stopping command controller: {e}")
+
         # Hide tray icon and cleanup
         self.tray_icon.hide()
 
@@ -628,37 +628,28 @@ class WhisperGUI(QMainWindow):
         else:
             self.start_recording()
 
-    def _read_commands(self):
-        """Read and process commands from the control FIFO"""
-        print(f"📡 Command reader thread listening on {self.command_pipe_path}")
-        while True:
-            try:
-                # Open FIFO for reading (blocks until data is available)
-                with open(str(self.command_pipe_path), 'r') as fifo:
-                    command = fifo.read().strip()
-                    if not command:
-                        continue
+    def _on_ipc_command(self, command: str):
+        """Handle command received from IPC controller.
 
-                    sys.stderr.write(f"🔔 Received command: {command}\n")
-                    sys.stderr.flush()
+        This callback is invoked by the command controller when a command is received.
+        We emit Qt signals to safely invoke methods in the main GUI thread.
 
-                    # Emit Qt signals to safely invoke recording methods in the main thread
-                    if command == "toggle":
-                        self.command_emitter.toggle_signal.emit()
-                    elif command == "start":
-                        self.command_emitter.start_signal.emit()
-                    elif command == "stop":
-                        self.command_emitter.stop_signal.emit()
-                    else:
-                        sys.stderr.write(f"❌ Unknown command: {command}\n")
-                        sys.stderr.flush()
+        Args:
+            command: Command string ("start", "stop", or "toggle")
+        """
+        sys.stderr.write(f"🔔 Received IPC command: {command}\n")
+        sys.stderr.flush()
 
-            except Exception as e:
-                sys.stderr.write(f"❌ Error reading commands: {e}\n")
-                sys.stderr.flush()
-                # Continue listening even on errors
-                import time
-                time.sleep(0.1)
+        # Emit Qt signals to safely invoke recording methods in the main thread
+        if command == "toggle":
+            self.command_emitter.toggle_signal.emit()
+        elif command == "start":
+            self.command_emitter.start_signal.emit()
+        elif command == "stop":
+            self.command_emitter.stop_signal.emit()
+        else:
+            sys.stderr.write(f"❌ Unknown command: {command}\n")
+            sys.stderr.flush()
 
     def on_terminal_button_clicked(self):
         """Open Xfce terminal in the Whisper project directory"""
