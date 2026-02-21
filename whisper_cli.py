@@ -28,7 +28,7 @@ class WhisperCLI:
         
         if not headless:
             print("🤖 Loading Whisper model...")
-        self.model = whisper.load_model("base")
+        self.model = whisper.load_model("medium")
         self.recording = False
         self.audio_data = []
         self.stream = None
