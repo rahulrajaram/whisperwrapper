@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from contextlib import redirect_stderr
+from pathlib import Path
 from typing import Optional
 
 import pyaudio
-import whisper
+from faster_whisper import WhisperModel
 
 from ..config import WhisperRuntimeConfig
+
+logger = logging.getLogger(__name__)
+
+GLOBAL_VOCABULARY_PATH = Path.home() / ".whisper" / "vocabulary.txt"
 
 
 class TranscriptionService:
@@ -23,7 +29,71 @@ class TranscriptionService:
             import torch
 
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = whisper.load_model(runtime_config.model_name, device=self.device)
+
+        compute_type = "float16" if self.device == "cuda" else "int8"
+
+        logger.info(
+            f"Loading Whisper model '{runtime_config.model_name}' on device: {self.device} "
+            f"(compute_type={compute_type})"
+        )
+
+        try:
+            self.model = WhisperModel(
+                runtime_config.model_name, device=self.device, compute_type=compute_type
+            )
+        except Exception:
+            if self.device == "cuda":
+                logger.warning("CUDA model load failed, falling back to CPU")
+                self.device = "cpu"
+                self.model = WhisperModel(
+                    runtime_config.model_name, device="cpu", compute_type="int8"
+                )
+            else:
+                raise
+
+        self._vocab_prompt: Optional[str] = None
+        self._vocab_mtime: float = 0.0
+
+    def _get_vocabulary_prompt(self) -> Optional[str]:
+        """Return cached vocabulary prompt, reloading only when the file changes."""
+        try:
+            if not GLOBAL_VOCABULARY_PATH.exists():
+                if self._vocab_prompt is not None:
+                    logger.info("Vocabulary file removed, clearing prompt")
+                    self._vocab_prompt = None
+                    self._vocab_mtime = 0.0
+                return None
+            mtime = GLOBAL_VOCABULARY_PATH.stat().st_mtime
+            if mtime == self._vocab_mtime:
+                return self._vocab_prompt
+            text = GLOBAL_VOCABULARY_PATH.read_text(encoding="utf-8").strip()
+            if not text:
+                self._vocab_prompt = None
+                self._vocab_mtime = mtime
+                return None
+            terms = [t.strip() for t in text.splitlines() if t.strip()]
+            self._vocab_prompt = ", ".join(terms)
+            self._vocab_mtime = mtime
+            logger.info("Loaded %d vocabulary terms from %s", len(terms), GLOBAL_VOCABULARY_PATH)
+            return self._vocab_prompt
+        except Exception:
+            logger.warning("Failed to read vocabulary file", exc_info=True)
+            return self._vocab_prompt  # Return last known good value
+
+    def cleanup(self) -> None:
+        """Release the Whisper model and free GPU memory."""
+        if hasattr(self, "model"):
+            del self.model
+            self.model = None  # type: ignore[assignment]
+            logger.debug("Whisper model deleted")
+
+        if self.device == "cuda":
+            try:
+                import torch.cuda
+                torch.cuda.empty_cache()
+                logger.debug("CUDA cache cleared")
+            except Exception:
+                pass
 
     def transcribe_frames(
         self,
@@ -50,14 +120,27 @@ class TranscriptionService:
             wav.writeframes(b"".join(frames))
             wav.close()
 
+            transcribe_kwargs = dict(
+                beam_size=5, initial_prompt=self._get_vocabulary_prompt()
+            )
+
             if headless:
                 with open(os.devnull, "w") as devnull:
                     with redirect_stderr(devnull):
-                        result = self.model.transcribe(filename)
+                        segments, _info = self.model.transcribe(
+                            filename, **transcribe_kwargs
+                        )
             else:
-                result = self.model.transcribe(filename)
+                segments, _info = self.model.transcribe(
+                    filename, **transcribe_kwargs
+                )
 
-            text = result.get("text", "").strip()
+            text = " ".join(segment.text for segment in segments).strip()
+            del segments, _info
+
+            import gc
+            gc.collect()
+
             return text or None
         finally:
             try:
