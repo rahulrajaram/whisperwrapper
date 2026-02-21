@@ -29,6 +29,7 @@ Measured on NVIDIA GeForce RTX 4060 Laptop GPU (8 GB VRAM), Debian 12, Python 3.
 | Model load time | ~1.3s (CUDA) |
 | VRAM usage | ~3.9 GB |
 | Inference speed | ~19x realtime (84s audio in 4.4s) |
+| Throughput | ~1,800 words/min processing capacity |
 
 Performance is logged automatically on each transcription:
 
