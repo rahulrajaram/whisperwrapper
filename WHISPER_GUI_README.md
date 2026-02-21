@@ -61,19 +61,25 @@ Or directly:
 3. **Stop Recording**: Click the red "⏹ Stop Recording" button
    - Status shows "⏳ Processing transcription..."
    - Whisper AI processes your audio and transcribes it
+   - **Transcription is automatically copied to clipboard** ✅
+   - Status shows "✅ Transcription copied to clipboard"
 
-4. **View History**:
+4. **Paste Transcription**:
+   - Your transcription is already in the clipboard
+   - Paste it with Ctrl+V in any application
+   - Email, chat, text editor, anywhere!
+
+5. **View History**:
    - All transcriptions appear in the table at the bottom
    - Newest recordings appear first
    - Table shows timestamp, full transcription, and copy button
 
-5. **Copy to Clipboard**:
-   - Click the "Copy" button in any row
-   - The transcription text is copied to your clipboard
+6. **Copy from History**:
+   - Click the "Copy" button in any row to copy that transcription again
    - Status bar confirms: "✅ Copied to clipboard..."
    - Paste with Ctrl+V in any application
 
-6. **Clear History**:
+7. **Clear History**:
    - Click the orange "🗑 Clear History" button
    - All transcriptions are removed
    - History file is updated

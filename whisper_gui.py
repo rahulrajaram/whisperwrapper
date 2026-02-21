@@ -241,17 +241,21 @@ class WhisperGUI(QMainWindow):
     def on_recording_result(self, transcription: str):
         """Handle successful transcription"""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        transcription_text = transcription.strip()
 
         # Add to history
         item = {
             "timestamp": timestamp,
-            "text": transcription.strip()
+            "text": transcription_text
         }
         self.history.insert(0, item)  # Add to beginning for newest first
         self.save_history()
 
-        self.status_label.setText(f"✅ Saved: \"{transcription.strip()[:50]}...\"")
-        self.statusBar().showMessage("Transcription saved")
+        # Automatically copy to clipboard
+        self._copy_text_to_clipboard(transcription_text)
+
+        self.status_label.setText(f"✅ Copied to clipboard: \"{transcription_text[:50]}...\"")
+        self.statusBar().showMessage("✅ Transcription copied to clipboard")
 
         self.refresh_history_table()
 
@@ -291,32 +295,45 @@ class WhisperGUI(QMainWindow):
             copy_button.clicked.connect(lambda checked, r=row: self.copy_to_clipboard(r))
             self.history_table.setCellWidget(row, 2, copy_button)
 
+    def _copy_text_to_clipboard(self, text: str) -> bool:
+        """
+        Copy text to clipboard (helper method)
+
+        Args:
+            text: Text to copy
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if os.environ.get("WAYLAND_DISPLAY"):
+                process = subprocess.Popen(
+                    ["wl-copy"],
+                    stdin=subprocess.PIPE,
+                    text=True
+                )
+            else:
+                process = subprocess.Popen(
+                    ["xclip", "-selection", "clipboard"],
+                    stdin=subprocess.PIPE,
+                    text=True
+                )
+
+            process.communicate(input=text)
+            return True
+        except FileNotFoundError:
+            self.statusBar().showMessage("❌ Clipboard tool not found (wl-copy or xclip)")
+            return False
+        except Exception as e:
+            self.statusBar().showMessage(f"❌ Copy failed: {str(e)}")
+            return False
+
     def copy_to_clipboard(self, row: int):
         """Copy history item to clipboard"""
         if row < len(self.history):
             text = self.history[row]["text"]
-
-            # Use xclip or wl-copy depending on display server
-            try:
-                if os.environ.get("WAYLAND_DISPLAY"):
-                    process = subprocess.Popen(
-                        ["wl-copy"],
-                        stdin=subprocess.PIPE,
-                        text=True
-                    )
-                else:
-                    process = subprocess.Popen(
-                        ["xclip", "-selection", "clipboard"],
-                        stdin=subprocess.PIPE,
-                        text=True
-                    )
-
-                process.communicate(input=text)
+            if self._copy_text_to_clipboard(text):
                 self.statusBar().showMessage(f"✅ Copied to clipboard: {text[:40]}...")
-            except FileNotFoundError:
-                self.statusBar().showMessage("❌ Clipboard tool not found (wl-copy or xclip)")
-            except Exception as e:
-                self.statusBar().showMessage(f"❌ Copy failed: {str(e)}")
 
     def clear_history(self):
         """Clear all history"""

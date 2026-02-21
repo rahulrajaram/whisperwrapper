@@ -17,8 +17,9 @@ cd ~/Documents/whisper
 - Click **▶ Start Recording**
 - Speak into your microphone
 - Click **⏹ Stop Recording**
-- Your transcription appears in the history table
-- Click **Copy** to copy to clipboard
+- Your transcription **automatically copies to clipboard** ✅
+- History appears in the table below
+- Paste with **Ctrl+V** in any application
 
 Done! 🎉
 
@@ -33,18 +34,22 @@ Done! 🎉
 4. Speak clearly at normal volume
 5. Click **⏹ Stop Recording** when done
 6. Wait for "Processing..." message
-7. Transcription appears in the history table
+7. Transcription **automatically copies to clipboard** ✅
+8. Transcription also appears in the history table below
+9. Status shows "✅ Transcription copied to clipboard"
+10. Paste with **Ctrl+V** in any application
 
 ### Managing History
+- **Auto-Copy**: Latest transcription automatically goes to clipboard
 - **View**: All transcriptions appear in the scrollable table
-- **Copy**: Click the "Copy" button in any row
+- **Manual Copy**: Click the "Copy" button in any row to copy that transcription
 - **Clear**: Click "🗑 Clear History" to remove all entries
 - **Export**: Manually copy from `~/.whisper/gui_history.json`
 
 ### Copying to Clipboard
-- Click "Copy" button for any transcription
-- Status bar shows confirmation
-- Paste with **Ctrl+V** in any application
+- **Automatic**: When you stop recording, text is automatically copied
+- **Manual**: Click "Copy" button for any history row
+- **Paste**: Use **Ctrl+V** in any application
 
 ### Persistent History
 - All transcriptions are automatically saved
