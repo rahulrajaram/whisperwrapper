@@ -25,19 +25,19 @@ def sine_wave(duration_sec: float = 0.2, rate: int = 16000) -> bytes:
 
 @pytest.fixture
 def whisper_stub():
-    original = sys.modules.get("whisper")
+    original = sys.modules.get("faster_whisper")
     transcription = sys.modules.get("whisper_app.services.transcription")
-    original_transcription_whisper = getattr(transcription, "whisper", None) if transcription else None
+    original_whisper_model = getattr(transcription, "WhisperModel", None) if transcription else None
     stub = install_whisper_stub()
-    log_whisper_event("whisper stub installed for tests/test_services.py")
+    log_whisper_event("faster-whisper stub installed for tests/test_services.py")
     yield stub
     if original is None:
-        sys.modules.pop("whisper", None)
+        sys.modules.pop("faster_whisper", None)
     else:
-        sys.modules["whisper"] = original
-    if transcription is not None:
-        setattr(transcription, "whisper", original_transcription_whisper)
-    log_whisper_event("whisper stub removed for tests/test_services.py")
+        sys.modules["faster_whisper"] = original
+    if transcription is not None and original_whisper_model is not None:
+        setattr(transcription, "WhisperModel", original_whisper_model)
+    log_whisper_event("faster-whisper stub removed for tests/test_services.py")
 
 
 def test_recording_session_start_stop(monkeypatch):

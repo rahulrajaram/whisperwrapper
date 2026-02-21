@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# commit-msg hook placeholder
+# Add commit message validation here as needed.
+exit 0

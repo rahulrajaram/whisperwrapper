@@ -19,97 +19,107 @@ def log_whisper_event(message: str) -> None:
         fh.write(f"[{timestamp}] {message}\n")
 
 
-def _install_whisper_stub() -> ModuleType:
-    """Install a lightweight Whisper stub so integration tests always run."""
+class _StubSegment:
+    """Mimics a faster-whisper segment namedtuple."""
 
-    class _StubModel:
-        def __init__(self, model_name: str, device: str | None = None):
-            self.model_name = model_name
-            self.device = device
+    def __init__(self, text: str):
+        self.text = text
 
-        def transcribe(self, filename: str):
-            return {"text": f"[stub transcription:{self.model_name}]"}
 
-    stub = ModuleType("whisper")
+class _StubInfo:
+    """Mimics a faster-whisper TranscriptionInfo."""
+
+    language = "en"
+    language_probability = 0.99
+
+
+class _StubWhisperModel:
+    """Mimics faster_whisper.WhisperModel for tests."""
+
+    def __init__(self, model_size_or_path: str, device: str = "cpu", compute_type: str = "int8", **kwargs):
+        self.model_size = model_size_or_path
+        self.device = device
+        self.compute_type = compute_type
+
+    def transcribe(self, filename: str, **kwargs):
+        segments = [_StubSegment(f"[stub transcription:{self.model_size}]")]
+        return iter(segments), _StubInfo()
+
+
+def _install_faster_whisper_stub() -> ModuleType:
+    """Install a lightweight faster_whisper stub so integration tests always run."""
+
+    stub = ModuleType("faster_whisper")
     stub.__version__ = "test-stub"  # type: ignore[attr-defined]
-    stub.__whisper_stub__ = True  # type: ignore[attr-defined]
+    stub.__faster_whisper_stub__ = True  # type: ignore[attr-defined]
     stub.__file__ = str(LOG_PATH)
-    stub.__spec__ = importlib.machinery.ModuleSpec("whisper", loader=None)  # type: ignore[arg-type]
-
-    def load_model(model_name: str, device: str | None = None, **_):
-        return _StubModel(model_name=model_name, device=device)
-
-    stub.load_model = load_model  # type: ignore[attr-defined]
+    stub.__spec__ = importlib.machinery.ModuleSpec("faster_whisper", loader=None)  # type: ignore[arg-type]
+    stub.WhisperModel = _StubWhisperModel  # type: ignore[attr-defined]
     return stub
 
 
 def _patch_transcription_module(module: ModuleType) -> None:
     transcription = sys.modules.get("whisper_app.services.transcription")
     if transcription is not None:
-        setattr(transcription, "whisper", module)
+        setattr(transcription, "WhisperModel", module.WhisperModel)  # type: ignore[attr-defined]
 
 
-def _load_real_whisper() -> ModuleType | None:
+def _load_real_faster_whisper() -> ModuleType | None:
     try:
-        import whisper  # type: ignore
+        import faster_whisper  # type: ignore
     except ImportError:
-        log_whisper_event("Real Whisper import failed; falling back to stub backend")
+        log_whisper_event("Real faster-whisper import failed; falling back to stub backend")
         return None
 
-    if getattr(whisper, "load_model", None) is None:
-        log_whisper_event("Whisper module missing load_model; falling back to stub backend")
+    if getattr(faster_whisper, "WhisperModel", None) is None:
+        log_whisper_event("faster_whisper module missing WhisperModel; falling back to stub backend")
         return None
 
-    spec = getattr(whisper, "__spec__", None)
-    if spec is None and not getattr(whisper, "__file__", None):
-        log_whisper_event("Whisper module missing spec/file; falling back to stub backend")
-        return None
-
-    log_whisper_event("Real Whisper detected; using installed backend")
-    return whisper  # type: ignore[name-defined]
+    log_whisper_event("Real faster-whisper detected; using installed backend")
+    return faster_whisper  # type: ignore[name-defined]
 
 
 def ensure_whisper_module() -> ModuleType:
-    """Guarantee that a usable Whisper module (real or stub) is importable."""
+    """Guarantee that a usable faster_whisper module (real or stub) is importable."""
 
     force_real = os.environ.get("WHISPER_TESTS_FORCE_REAL") == "1"
-    module = sys.modules.get("whisper")
+    module = sys.modules.get("faster_whisper")
 
     if module is not None:
-        is_stub = getattr(module, "__whisper_stub__", False)
+        is_stub = getattr(module, "__faster_whisper_stub__", False)
         if force_real and is_stub:
-            real = _load_real_whisper()
+            real = _load_real_faster_whisper()
             if real is not None:
-                sys.modules["whisper"] = real
+                sys.modules["faster_whisper"] = real
                 _patch_transcription_module(real)
                 return real
         if not force_real and not is_stub:
-            module = _install_whisper_stub()
-            sys.modules["whisper"] = module
+            module = _install_faster_whisper_stub()
+            sys.modules["faster_whisper"] = module
             _patch_transcription_module(module)
-            log_whisper_event("Using whisper stub backend for tests (overriding real module)")
+            log_whisper_event("Using faster-whisper stub backend for tests (overriding real module)")
         return module
 
     if force_real:
-        real = _load_real_whisper()
+        real = _load_real_faster_whisper()
         if real is not None:
-            sys.modules["whisper"] = real
+            sys.modules["faster_whisper"] = real
             _patch_transcription_module(real)
             return real
         log_whisper_event("WHISPER_TESTS_FORCE_REAL=1 but real backend unavailable; using stub")
 
-    stub = _install_whisper_stub()
-    sys.modules["whisper"] = stub
+    stub = _install_faster_whisper_stub()
+    sys.modules["faster_whisper"] = stub
     _patch_transcription_module(stub)
-    log_whisper_event("Using whisper stub backend for tests")
+    log_whisper_event("Using faster-whisper stub backend for tests")
     return stub
 
 
 def install_whisper_stub() -> ModuleType:
     """Public helper for tests that need direct control over the stub."""
 
-    stub = _install_whisper_stub()
-    sys.modules["whisper"] = stub
+    stub = _install_faster_whisper_stub()
+    sys.modules["faster_whisper"] = stub
     _patch_transcription_module(stub)
-    log_whisper_event("Whisper stub installed via tests.helpers.install_whisper_stub")
+    log_whisper_event("faster-whisper stub installed via tests.helpers.install_whisper_stub")
     return stub

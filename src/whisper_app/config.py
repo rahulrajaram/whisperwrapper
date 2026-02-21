@@ -46,7 +46,7 @@ class WhisperPaths:
 class HotkeyConfig:
     """Configuration related to global hotkeys."""
 
-    enabled: bool = True
+    enabled: bool = False
     chord: str = "ctrl+alt+shift+r"
 
 
@@ -54,7 +54,7 @@ class HotkeyConfig:
 class WhisperRuntimeConfig:
     """Runtime configuration shared by GUI, CLI, and daemons."""
 
-    model_name: str = "medium"
+    model_name: str = "large-v3"
     device_override: Optional[str] = None
     headless: bool = True
     debug: bool = False

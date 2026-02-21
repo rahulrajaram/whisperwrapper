@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable, Iterable, Set
 
@@ -89,6 +90,7 @@ class HotkeyBackend:
     def _run_listener(self) -> None:
         modifiers_pressed: Set[str] = set()
         trigger_key = self.chord.lower().split("+")[-1]
+        last_fire_time = 0.0
 
         modifier_mapping = {
             keyboard.Key.ctrl: "ctrl",
@@ -142,6 +144,12 @@ class HotkeyBackend:
                 return
 
             if _keycode_matches_trigger(key) and self._modifiers <= modifiers_pressed:
+                nonlocal last_fire_time
+                now = time.monotonic()
+                if now - last_fire_time < 1.0:
+                    logger.debug("Hotkey chord %s suppressed (debounce)", self.chord)
+                    return
+                last_fire_time = now
                 logger.info("Hotkey chord %s detected", self.chord)
                 self.callback()
 

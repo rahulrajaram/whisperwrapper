@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "whisper-app"
-version = "1.0.0"
+version = "0.1.0"
 description = "OpenAI Whisper voice recording with system tray GUI and GPU acceleration"
 readme = "README.md"
 authors = [
@@ -27,7 +27,7 @@ classifiers = [
 keywords = ["whisper", "speech-to-text", "transcription", "audio", "gui", "cuda"]
 requires-python = ">=3.8"
 dependencies = [
-    "openai-whisper>=20230314",
+    "faster-whisper>=1.0.0",
     "pyaudio>=0.2.11",
     "numpy>=1.20.0",
     "PyQt6>=6.0.0",
