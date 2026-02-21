@@ -19,6 +19,23 @@ A PyQt6 desktop application for speech-to-text transcription using [faster-whisp
 - **Keyboard shortcut** via FIFO IPC — bind any desktop shortcut to toggle recording (Wayland-compatible)
 - **Claude integration** for AI-powered text refinement and keyword highlighting
 
+## Performance
+
+Measured on NVIDIA GeForce RTX 4060 Laptop GPU (8 GB VRAM), Debian 12, Python 3.11:
+
+| Metric | Value |
+|---|---|
+| Model | large-v3 (float16, CTranslate2) |
+| Model load time | ~1.3s (CUDA) |
+| VRAM usage | ~3.9 GB |
+| Inference speed | 4-6x realtime (e.g. 10s audio in ~2s) |
+
+Performance is logged automatically on each transcription:
+
+```
+Transcription: 5.2s audio → 1.1s inference (4.7x realtime) on cuda
+```
+
 ## Requirements
 
 | | Minimum | Recommended |
