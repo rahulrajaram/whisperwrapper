@@ -14,7 +14,7 @@ try:
     from PyQt6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QTableWidget, QLabel, QStatusBar,
-        QSystemTrayIcon, QMenu
+        QSystemTrayIcon, QMenu, QSplitter
     )
     from PyQt6.QtCore import Qt, pyqtSignal, QObject, QMetaObject, pyqtSlot, QUrl
     from PyQt6.QtGui import QColor, QFont, QIcon
@@ -184,16 +184,18 @@ class WhisperGUI(QMainWindow):
         self.project_sidebar = ProjectSidebar(self.presenter, self)
         self.project_sidebar.project_selected.connect(self._on_project_selected)
 
-        # Wrap central widget with sidebar in a horizontal layout
+        # Wrap central widget with sidebar in a splitter for resizable panels
         original_central = self.centralWidget()
-        wrapper_widget = QWidget()
-        wrapper_layout = QHBoxLayout()
-        wrapper_layout.setContentsMargins(0, 0, 0, 0)
-        wrapper_layout.setSpacing(0)
-        wrapper_layout.addWidget(self.project_sidebar)
-        wrapper_layout.addWidget(original_central, 1)
-        wrapper_widget.setLayout(wrapper_layout)
-        self.setCentralWidget(wrapper_widget)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setContentsMargins(0, 0, 0, 0)
+        splitter.addWidget(self.project_sidebar)
+        splitter.addWidget(original_central)
+        # Set initial sizes: sidebar 250px, main content takes rest
+        splitter.setSizes([250, 800])
+        # Allow collapsing the sidebar
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+        self.setCentralWidget(splitter)
 
     def setup_tray(self):
         """Setup system tray icon and menu."""

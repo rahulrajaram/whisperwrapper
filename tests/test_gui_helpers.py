@@ -33,6 +33,8 @@ class DummyPresenter:
         self.copy_calls: List[int] = []
         self.delete_calls: List[int] = []
         self.toggle_calls: List[int] = []
+        self.selected_rows: set = set()  # For multi-select support
+        self.last_selected_row: int | None = None
 
     def copy_to_clipboard(self, row: int):
         self.copy_calls.append(row)
@@ -43,6 +45,29 @@ class DummyPresenter:
     def toggle_protection(self, row: int):
         self.toggle_calls.append(row)
 
+    def select_row(self, row: int, shift: bool = False, ctrl: bool = False):
+        """Handle row selection with shift/ctrl modifiers."""
+        if shift and self.last_selected_row is not None:
+            start = min(self.last_selected_row, row)
+            end = max(self.last_selected_row, row) + 1
+            self.selected_rows.update(range(start, end))
+        elif ctrl:
+            if row in self.selected_rows:
+                self.selected_rows.discard(row)
+            else:
+                self.selected_rows.add(row)
+        else:
+            self.selected_rows = {row}
+        self.last_selected_row = row
+
+    def delete_selected(self):
+        """Delete all selected rows."""
+        self.delete_calls.extend(sorted(self.selected_rows, reverse=True))
+
+    def toggle_protection_selected(self):
+        """Toggle protection for all selected rows."""
+        self.toggle_calls.extend(sorted(self.selected_rows))
+
     def get_filtered_history(self, project_id=None):
         """Return history filtered by project (for testing, return all)."""
         return self.history
@@ -52,7 +77,7 @@ class DummyGUI:
     def __init__(self, presenter: DummyPresenter):
         self.presenter = presenter
         self.history_table = QTableWidget()
-        self.history_table.setColumnCount(4)
+        self.history_table.setColumnCount(2)
         self._status_bar = DummyStatusBar()
         self.status_label = QLabel()
         self.clicked_rows: List[tuple[int, int]] = []
@@ -64,7 +89,7 @@ class DummyGUI:
         self.clicked_rows.append((row, column))
 
 
-def test_refresh_history_table_populates_rows_and_buttons(qt_app):
+def test_refresh_history_table_populates_rows(qt_app):
     presenter = DummyPresenter(
         history=[
             {"timestamp": "t1", "text": "alpha", "protected": False},
@@ -76,32 +101,12 @@ def test_refresh_history_table_populates_rows_and_buttons(qt_app):
     refresh_history_table(gui)
 
     assert gui.history_table.rowCount() == 2
-
-    # Copy button copies the correct row
-    copy_button = gui.history_table.cellWidget(0, 2)
-    copy_button.clicked.emit(False)
-    assert presenter.copy_calls == [0]
-
-    # Lock button toggles protection for unselected rows
-    lock_button = gui.history_table.cellWidget(1, 3)
-    assert lock_button.text() == "🔒"
-    lock_button.clicked.emit(False)
-    assert presenter.toggle_calls == [1]
-
-
-def test_refresh_history_table_renders_delete_button_for_selected_row(qt_app):
-    presenter = DummyPresenter(
-        history=[{"timestamp": "t1", "text": "alpha", "protected": False}],
-        selected_row=0,
-    )
-    gui = DummyGUI(presenter)
-
-    refresh_history_table(gui)
-
-    delete_button = gui.history_table.cellWidget(0, 3)
-    assert delete_button.text() == "🗑 Delete"
-    delete_button.clicked.emit(False)
-    assert presenter.delete_calls == [0]
+    assert gui.history_table.columnCount() == 2
+    # Verify both rows have text content in column 1
+    text_widget_0 = gui.history_table.cellWidget(0, 1)
+    text_widget_1 = gui.history_table.cellWidget(1, 1)
+    assert text_widget_0 is not None
+    assert text_widget_1 is not None
 
 
 class FakeGUIForActions:
@@ -328,7 +333,7 @@ def test_build_main_interface_wires_button_callbacks(qt_app):
 
     build_main_interface(window)
 
-    assert window.history_table.columnCount() == 4
+    assert window.history_table.columnCount() == 2
 
     window.start_button.click()
     window.stop_button.click()

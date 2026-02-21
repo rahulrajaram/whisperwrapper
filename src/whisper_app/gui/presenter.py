@@ -50,6 +50,8 @@ class WhisperPresenter(QObject):
 
         self.history: List[dict] = self.storage.load_history() or []
         self.selected_row: Optional[int] = None
+        self.selected_rows: set[int] = set()  # For multi-select support
+        self.last_selected_row: Optional[int] = None  # For shift-click range selection
 
         self.is_recording = False
         self._recording_thread: Optional[QThread] = None
@@ -431,6 +433,63 @@ class WhisperPresenter(QObject):
         self.history_changed.emit()
         self.status_message.emit("✅ Recording copied to project")
 
+    def copy_selected_to_project(self, target_project_id: str) -> None:
+        """Copy all selected recordings to a different project.
+
+        Args:
+            target_project_id: ID of the target project
+        """
+        if not self.project_manager.get_project(target_project_id):
+            self.status_message.emit("❌ Target project not found")
+            return
+
+        if not self.selected_rows:
+            return
+
+        count = 0
+        for row in sorted(self.selected_rows):
+            if row >= len(self.history):
+                continue
+            original = self.history[row]
+            copy = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "text": original["text"],
+                "protected": original.get("protected", False),
+                "project_id": target_project_id,
+            }
+            self.history.insert(0, copy)
+            count += 1
+
+        if count > 0:
+            self._save_history()
+            self.history_changed.emit()
+            self.status_message.emit(f"✅ {count} recording(s) copied to project")
+
+    def move_selected_to_project(self, target_project_id: str) -> None:
+        """Move all selected recordings to a different project.
+
+        Args:
+            target_project_id: ID of the target project
+        """
+        if not self.project_manager.get_project(target_project_id):
+            self.status_message.emit("❌ Target project not found")
+            return
+
+        if not self.selected_rows:
+            return
+
+        count = 0
+        for row in sorted(self.selected_rows):
+            if row >= len(self.history):
+                continue
+            self.history[row]["project_id"] = target_project_id
+            count += 1
+
+        if count > 0:
+            self._save_history()
+            self.history_changed.emit()
+            self.status_message.emit(f"✅ {count} recording(s) moved to project")
+
     def _migrate_recordings_to_projects(self) -> None:
         """Migrate existing recordings without project_id to default project."""
         default_project = self.project_manager.get_default_project()
@@ -446,3 +505,105 @@ class WhisperPresenter(QObject):
         if migrated > 0:
             self._save_history()
             print(f"Migrated {migrated} recordings to default project")
+
+    # ------------------------------------------------------------------
+    # Multi-select support
+    # ------------------------------------------------------------------
+
+    def select_row(self, row: int, shift: bool = False, ctrl: bool = False) -> None:
+        """
+        Handle row selection with support for shift and ctrl/cmd clicks.
+
+        Args:
+            row: The row index to select
+            shift: If True, select range from last_selected_row to row
+            ctrl: If True, toggle selection of this row (add/remove)
+        """
+        if shift and self.last_selected_row is not None:
+            # Shift-click: select range from last_selected_row to row
+            start = min(self.last_selected_row, row)
+            end = max(self.last_selected_row, row) + 1
+            self.selected_rows.update(range(start, end))
+        elif ctrl:
+            # Ctrl-click: toggle selection
+            if row in self.selected_rows:
+                self.selected_rows.discard(row)
+            else:
+                self.selected_rows.add(row)
+        else:
+            # Regular click: select only this row
+            self.selected_rows = {row}
+
+        self.last_selected_row = row
+        self.history_changed.emit()
+
+    def clear_selection(self) -> None:
+        """Clear all selected rows."""
+        self.selected_rows.clear()
+        self.last_selected_row = None
+        self.history_changed.emit()
+
+    def delete_selected(self) -> None:
+        """Delete all selected items (respecting protected status)."""
+        if not self.selected_rows:
+            self.status_message.emit("❌ No items selected")
+            return
+
+        # Sort indices in descending order to avoid index shifting
+        rows_to_delete = sorted(self.selected_rows, reverse=True)
+
+        protected_count = 0
+        deleted_count = 0
+
+        for row in rows_to_delete:
+            if row < len(self.history):
+                if self.history[row].get("protected", False):
+                    protected_count += 1
+                else:
+                    del self.history[row]
+                    deleted_count += 1
+
+        self._save_history()
+        self.selected_rows.clear()
+        self.last_selected_row = None
+        self.history_changed.emit()
+
+        if deleted_count > 0:
+            if protected_count > 0:
+                self.status_message.emit(
+                    f"🗑 Deleted {deleted_count} items ({protected_count} protected)"
+                )
+            else:
+                self.status_message.emit(f"🗑 Deleted {deleted_count} items")
+        else:
+            self.status_message.emit("🔒 All selected items are protected")
+
+    def toggle_protection_selected(self) -> None:
+        """Toggle protection status for all selected items."""
+        if not self.selected_rows:
+            self.status_message.emit("❌ No items selected")
+            return
+
+        protected_count = 0
+        unprotected_count = 0
+
+        for row in self.selected_rows:
+            if row < len(self.history):
+                is_protected = self.history[row].get("protected", False)
+                self.history[row]["protected"] = not is_protected
+                if not is_protected:
+                    protected_count += 1
+                else:
+                    unprotected_count += 1
+
+        self._save_history()
+        self.history_changed.emit()
+
+        if protected_count > 0 and unprotected_count > 0:
+            self.status_message.emit(
+                f"🔒 Protected {protected_count}, unprotected {unprotected_count}"
+            )
+        elif protected_count > 0:
+            self.status_message.emit(f"🔒 Protected {protected_count} items")
+        else:
+            self.status_message.emit(f"🔓 Unprotected {unprotected_count} items")

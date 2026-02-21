@@ -46,6 +46,8 @@ class StubPresenter(QObject):
         self.is_recording = False
         self.history = [{"timestamp": "t1", "text": "alpha", "protected": False}]
         self.selected_row = None
+        self.selected_rows = set()  # For multi-select support
+        self.last_selected_row = None
         self.codex_calls = 0
         self.project_manager = MagicMock()
 
