@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Whisper Voice Recording
+Comment=Record and transcribe voice to text using AI
+Icon=audio-microphone
+Exec=/home/rahul/Documents/whisper/launch_gui.sh
+Categories=Multimedia;Audio;Accessibility;Utility;
+Terminal=false
+StartupNotify=true
+Keywords=whisper;voice;recording;transcription;speech;text;

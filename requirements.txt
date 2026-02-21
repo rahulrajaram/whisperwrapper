@@ -1,3 +1,4 @@
 openai-whisper
 pyaudio
 numpy
+PyQt6

@@ -1,8 +1,25 @@
-# Whisper CLI - Real-time Speech-to-Text
+# Whisper - Real-time Speech-to-Text
 
-A real-time speech-to-text CLI tool using OpenAI's Whisper, with support for REPL integration.
+A speech-to-text system with both **CLI** and **GUI** interfaces using OpenAI's Whisper.
 
 ## Quick Start
+
+### GUI Application (Recommended)
+
+```bash
+# Install PyQt6
+pip install PyQt6
+
+# Run the GUI
+./whisper_gui.py
+```
+
+Or use the launcher:
+```bash
+./launch_gui.sh
+```
+
+### CLI Application
 
 ```bash
 # Install dependencies
@@ -17,6 +34,16 @@ python whisper_cli.py 2>/dev/null
 
 ## Features
 
+### GUI Application (whisper_gui.py)
+- ✅ Native PyQt6 desktop application
+- ✅ One-click Start/Stop recording
+- ✅ Scrollable history of all transcriptions
+- ✅ Copy-to-clipboard for any transcription
+- ✅ Persistent history (saved to JSON)
+- ✅ Beautiful, intuitive interface
+- ✅ Desktop entry for app menu integration
+
+### CLI Application (whisper_cli.py)
 - ✅ Real-time audio recording from microphone
 - ✅ OpenAI Whisper integration for speech-to-text
 - ✅ Interactive CLI with ENTER to start/stop recording
@@ -24,6 +51,28 @@ python whisper_cli.py 2>/dev/null
 - ✅ Clean output without ALSA/JACK warnings
 - ✅ **REPL integration for Claude CLI, Codex, etc.**
 - ✅ Persistent microphone selection
+
+## GUI Usage
+
+### Launch Options
+
+1. **Via launcher script**: `./launch_gui.sh`
+2. **Direct execution**: `./whisper_gui.py`
+3. **Python**: `python3 whisper_gui.py`
+4. **Application Menu**: Search for "Whisper Voice Recording"
+
+### GUI Features in Detail
+
+- **Start Button**: Click to begin recording
+- **Stop Button**: Click to end recording and transcribe
+- **History Table**: Shows all past transcriptions with timestamps
+- **Copy Button**: Copy any transcription to clipboard with one click
+- **Clear History**: Remove all entries and start fresh
+- **Status Bar**: Real-time feedback on recording/processing status
+
+For complete documentation, see: **[WHISPER_GUI_README.md](WHISPER_GUI_README.md)**
+
+For quick setup, see: **[SETUP_GUI.md](SETUP_GUI.md)**
 
 ## REPL Integration
 
@@ -91,6 +140,14 @@ Once integrated, you can use these shortcuts:
 
 ## Files
 
+### GUI Application
+- `whisper_gui.py` - Main PyQt6 GUI application
+- `launch_gui.sh` - Launcher script with auto-dependency check
+- `whisper-gui.desktop` - Desktop entry for app menu
+- `WHISPER_GUI_README.md` - Complete GUI documentation
+- `SETUP_GUI.md` - Quick GUI setup guide
+
+### CLI Application
 - `whisper_cli.py` - Standalone CLI application
 - `whisper` - Clean wrapper script (suppresses ALSA warnings)
 - `whisper_recorder.py` - Reusable module for integration
@@ -99,10 +156,20 @@ Once integrated, you can use these shortcuts:
 
 ## Requirements
 
+### Minimum (CLI only)
 - Python 3.7+
 - PyAudio (for microphone access)
 - OpenAI Whisper
 - NumPy
+
+### For GUI Application
+- Python 3.7+
+- PyQt6 (for GUI framework)
+- All of the above
+
+### Clipboard Support (Optional)
+- For Wayland: `wl-clipboard` (usually pre-installed)
+- For X11: `xclip` (install with `sudo apt-get install xclip`)
 
 ## Installation
 
