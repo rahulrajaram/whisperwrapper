@@ -50,5 +50,8 @@ venv.bak/
 *.flac
 models/
 
+# Exception: Track application asset files
+!assets/*.mp3
+
 # Config files with sensitive data
 .whisper_config.json

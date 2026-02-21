@@ -16,9 +16,10 @@ try:
         QPushButton, QTableWidget, QLabel, QStatusBar,
         QSystemTrayIcon, QMenu
     )
-    from PyQt6.QtCore import Qt, pyqtSignal, QObject, QMetaObject, pyqtSlot
+    from PyQt6.QtCore import Qt, pyqtSignal, QObject, QMetaObject, pyqtSlot, QUrl
     from PyQt6.QtGui import QColor, QFont, QIcon
     from PyQt6.QtWidgets import QHeaderView
+    from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 except ImportError:
     print("❌ PyQt6 is not installed!")
     print("Install with: pip install PyQt6")
@@ -104,6 +105,27 @@ class WhisperGUI(QMainWindow):
         self.command_emitter.toggle_signal.connect(self._on_toggle_command)
         self.command_emitter.start_signal.connect(self.start_recording)
         self.command_emitter.stop_signal.connect(self.stop_recording)
+
+        # Initialize audio player for completion sound
+        self.audio_output = QAudioOutput()
+        self.media_player = QMediaPlayer()
+        self.media_player.setAudioOutput(self.audio_output)
+
+        # Connect error signal for debugging
+        self.media_player.errorOccurred.connect(
+            lambda error, error_string: logger.error(f"Media player error: {error} - {error_string}")
+        )
+
+        # Load completion sound
+        import os
+        completion_sound = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'assets', 'sweet-transition-153787.mp3')
+        completion_sound_abs = os.path.abspath(completion_sound)
+        if os.path.exists(completion_sound):
+            source_url = QUrl.fromLocalFile(completion_sound_abs)
+            self.media_player.setSource(source_url)
+            logger.info(f"Loaded completion sound: {completion_sound_abs}")
+        else:
+            logger.warning(f"Completion sound not found: {completion_sound_abs}")
 
         # Start the command bus (handles IPC communication)
         try:
@@ -318,6 +340,12 @@ class WhisperGUI(QMainWindow):
         # Update tray status and icon
         self.tray_status.setText("🎤 Ready")
         self._set_tray_icon_green()  # Change icon back to green when transcription is done
+        # Play completion sound
+        if self.media_player.source().isValid():
+            logger.debug("Playing completion sound")
+            self.media_player.play()
+        else:
+            logger.warning("Cannot play completion sound: media source is not valid")
 
     def _on_presenter_recording_started(self):
         """Update UI on recording start."""
