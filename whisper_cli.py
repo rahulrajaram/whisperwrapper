@@ -16,9 +16,10 @@ from contextlib import redirect_stderr
 import io
 
 class WhisperCLI:
-    def __init__(self, headless=False, force_configure=False):
+    def __init__(self, headless=False, force_configure=False, debug=False):
         self.headless = headless
-        
+        self.debug = debug
+
         # Suppress all ALSA/JACK warnings globally
         self._suppress_audio_warnings()
         self.config_file = os.path.expanduser("~/.whisper/config")
@@ -48,9 +49,15 @@ class WhisperCLI:
             self._select_microphone()
             self._save_config()
         
-        # Set up signal handler for clean exit
+        # Set up signal handlers for clean exit
         signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
     
+    def _debug(self, message):
+        """Print debug message if debug flag is enabled"""
+        if self.debug:
+            print(f"DEBUG: {message}", file=sys.stderr)
+
     def _suppress_audio_warnings(self):
         """Set environment variables to reduce ALSA warnings"""
         os.environ['ALSA_PCM_CARD'] = 'default'
@@ -163,7 +170,21 @@ class WhisperCLI:
                 sys.exit(0)
     
     def signal_handler(self, sig, frame):
-        print("\nExiting...")
+        self._debug(f"Signal {sig} received")
+        if not self.headless:
+            print("\nExiting...")
+
+        # If we're currently recording, stop and process the audio
+        if self.recording:
+            self._debug("Was recording, stopping and processing audio")
+            self._stop_spinner()
+            transcript = self.stop_recording()
+            self._debug(f"Got transcript from stop_recording: '{transcript}' (length: {len(transcript) if transcript else 0})")
+            # Write to FIFO even if interrupted
+            self._write_to_fifo(transcript)
+        else:
+            self._debug("Was not recording")
+
         self.cleanup()
         sys.exit(0)
     
@@ -241,34 +262,47 @@ class WhisperCLI:
                 break
     
     def stop_recording(self):
+        self._debug("stop_recording() called")
         if not self.recording:
+            self._debug("not recording, returning None")
             return
-        
+
         self.recording = False
+        self._debug("set recording=False, processing audio")
         if not self.headless:
             print("⏹️  Recording stopped. Processing...")
-        
+
         # Wait for recording thread to finish
         if hasattr(self, 'recording_thread') and self.recording_thread.is_alive():
+            self._debug("waiting for recording thread to finish")
             self.recording_thread.join(timeout=2.0)
-        
+            self._debug("recording thread finished")
+
         # Clean up stream
         if self.stream:
             try:
                 if self.stream.is_active():
+                    self._debug("stopping audio stream")
                     self.stream.stop_stream()
+                self._debug("closing audio stream")
                 self.stream.close()
             except Exception as e:
+                self._debug(f"error closing stream: {e}")
                 if not self.headless:
                     print(f"Error closing stream: {e}")
             finally:
                 self.stream = None
-        
+
         # Save audio to temporary file and transcribe
-        return self._transcribe_audio()
+        self._debug("calling _transcribe_audio()")
+        result = self._transcribe_audio()
+        self._debug(f"_transcribe_audio() returned: '{result}' (length: {len(result) if result else 0})")
+        return result
     
     def _transcribe_audio(self):
+        self._debug(f"_transcribe_audio() called, audio_data length: {len(self.audio_data) if self.audio_data else 0}")
         if not self.audio_data:
+            self._debug("no audio data recorded")
             if not self.headless:
                 print("No audio data recorded.")
             return None
@@ -309,6 +343,10 @@ class WhisperCLI:
                 else:
                     print(f"\n📝 Transcription:")
                     print(f"   {text}")
+                
+                # Write to FIFO if environment variable is set
+                self._write_to_fifo(text)
+                
                 return text
             else:
                 if not self.headless:
@@ -326,6 +364,27 @@ class WhisperCLI:
             except:
                 pass
     
+    def _write_to_fifo(self, text):
+        """Write transcript to FIFO if environment variable is set"""
+        fifo_path = os.environ.get('WHISPER_TRANSCRIPT_FIFO')
+        if fifo_path:
+            try:
+                # Debug: log FIFO write attempt
+                self._debug(f"Attempting to write to FIFO {fifo_path}, text length: {len(text) if text else 0}")
+                if text:
+                    with open(fifo_path, 'w') as f:
+                        f.write(text)
+                        f.flush()  # Ensure data is written immediately
+                    self._debug(f"Successfully wrote {len(text)} chars to FIFO")
+                else:
+                    self._debug("No text to write to FIFO")
+            except Exception as e:
+                self._debug(f"FIFO write error: {e}")
+                if not self.headless:
+                    print(f"Warning: Could not write to FIFO {fifo_path}: {e}")
+        else:
+            self._debug("No FIFO path set in environment")
+
     def cleanup(self):
         if self.recording:
             self.stop_recording()
@@ -415,29 +474,35 @@ def main():
         description="Whisper Real-time Speech-to-Text CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
+
     parser.add_argument(
         '--configure',
         action='store_true',
         help='Configure microphone settings'
     )
-    
+
     parser.add_argument(
         '--headless',
         action='store_true',
         help='Run in headless mode - single record/transcribe operation with output to stdout'
     )
-    
+
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug output to stderr'
+    )
+
     args = parser.parse_args()
-    
+
     if args.configure:
         # Configuration mode
-        cli = WhisperCLI(headless=False, force_configure=True)
+        cli = WhisperCLI(headless=False, force_configure=True, debug=args.debug)
         print("✅ Configuration complete!")
         return
-    
+
     # Normal or headless mode
-    cli = WhisperCLI(headless=args.headless)
+    cli = WhisperCLI(headless=args.headless, debug=args.debug)
     cli.run()
 
 if __name__ == "__main__":
