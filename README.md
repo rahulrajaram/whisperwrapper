@@ -152,6 +152,18 @@ rm ~/.whisper/config
 systemctl --user restart whisper-gui
 ```
 
+### Completion sound
+
+A short sound plays when recording stops and transcription finishes. To use your own sound, place an audio file named exactly `completion.wav` in the assets directory:
+
+```
+assets/completion.wav
+```
+
+The file must be named `completion.wav`. If the file is missing, the app runs silently with no error.
+
+Audio assets are gitignored, so each installation manages its own sound file.
+
 ## Architecture
 
 ```

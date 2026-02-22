@@ -50,8 +50,6 @@ venv.bak/
 *.flac
 models/
 
-# Exception: Track application asset files
-!assets/*.mp3
 
 # Yore index
 .yore/

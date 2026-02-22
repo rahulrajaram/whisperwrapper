@@ -132,7 +132,7 @@ class WhisperGUI(QMainWindow):
                     )
                 )
                 # Look for completion sound relative to package root
-                sound_path = Path(__file__).resolve().parent.parent.parent.parent / "assets" / "sweet-transition-153787.mp3"
+                sound_path = Path(__file__).resolve().parent.parent.parent.parent / "assets" / "completion.wav"
                 if sound_path.exists():
                     self.media_player.setSource(QUrl.fromLocalFile(str(sound_path)))
                     logger.info("Loaded completion sound: %s", sound_path)
