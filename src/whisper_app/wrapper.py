@@ -12,8 +12,9 @@ Commands:
   gui                   Launch the PyQt6 desktop GUI
   cli                   Run the headless CLI transcriber
   vocab <subcommand>    Manage vocabulary (~/.whisper/vocabulary.txt)
+  replace <subcommand>  Manage word replacements (~/.whisper/replacements.txt)
 
-Run 'whisperwrapper vocab' for vocabulary subcommands.\
+Run 'whisperwrapper vocab' or 'whisperwrapper replace' for subcommands.\
 """
 
 
@@ -36,6 +37,9 @@ def main() -> None:
     elif command == "vocab":
         from .vocab import run_vocab
         run_vocab(sys.argv[2:])
+    elif command == "replace":
+        from .replacements import run_replace
+        run_replace(sys.argv[2:])
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
         print(USAGE)

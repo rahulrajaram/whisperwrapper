@@ -9,16 +9,18 @@ import time
 import wave
 from contextlib import redirect_stderr
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 import pyaudio
 from faster_whisper import WhisperModel
 
 from ..config import WhisperRuntimeConfig
+from ..replacements import apply_replacements, load_replacements
 
 logger = logging.getLogger(__name__)
 
 GLOBAL_VOCABULARY_PATH = Path.home() / ".whisper" / "vocabulary.txt"
+GLOBAL_REPLACEMENTS_PATH = Path.home() / ".whisper" / "replacements.txt"
 
 
 class TranscriptionService:
@@ -58,6 +60,8 @@ class TranscriptionService:
 
         self._vocab_prompt: Optional[str] = None
         self._vocab_mtime: float = 0.0
+        self._replacements_cache: Dict[str, str] = {}
+        self._replacements_mtime: float = 0.0
 
     def _get_vocabulary_prompt(self) -> Optional[str]:
         """Return cached vocabulary prompt, reloading only when the file changes."""
@@ -84,6 +88,26 @@ class TranscriptionService:
         except Exception:
             logger.warning("Failed to read vocabulary file", exc_info=True)
             return self._vocab_prompt  # Return last known good value
+
+    def _get_replacements(self) -> Dict[str, str]:
+        """Return cached replacements, reloading only when the file changes."""
+        try:
+            if not GLOBAL_REPLACEMENTS_PATH.exists():
+                if self._replacements_cache:
+                    logger.info("Replacements file removed, clearing cache")
+                    self._replacements_cache = {}
+                    self._replacements_mtime = 0.0
+                return {}
+            mtime = GLOBAL_REPLACEMENTS_PATH.stat().st_mtime
+            if mtime == self._replacements_mtime:
+                return self._replacements_cache
+            self._replacements_cache = load_replacements()
+            self._replacements_mtime = mtime
+            logger.info("Loaded %d replacement(s) from %s", len(self._replacements_cache), GLOBAL_REPLACEMENTS_PATH)
+            return self._replacements_cache
+        except Exception:
+            logger.warning("Failed to read replacements file", exc_info=True)
+            return self._replacements_cache
 
     def cleanup(self) -> None:
         """Release the Whisper model and free GPU memory."""
@@ -144,6 +168,11 @@ class TranscriptionService:
                 )
 
             text = " ".join(segment.text for segment in segments).strip()
+
+            replacements = self._get_replacements()
+            if replacements:
+                text = apply_replacements(text, replacements)
+
             inference_time = time.monotonic() - t0
 
             realtime_factor = audio_duration / inference_time if inference_time > 0 else 0
