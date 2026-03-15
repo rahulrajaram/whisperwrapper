@@ -51,7 +51,7 @@ System packages needed:
 
 ```bash
 # Debian/Ubuntu
-sudo apt install python3-dev portaudio19-dev
+sudo apt install python3-dev portaudio19-dev xclip xdotool
 
 # Fedora
 sudo dnf install python3-devel portaudio-devel
@@ -126,6 +126,17 @@ gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/or
   binding '<Ctrl><Alt><Shift>r'
 ```
 
+### XFCE
+
+```bash
+xfconf-query -c xfce4-keyboard-shortcuts \
+  -p '/commands/custom/<Primary><Alt><Shift>r' \
+  -n -t string \
+  -s '/path/to/whisper-app/scripts/whisper-recording-toggle toggle'
+```
+
+Or via GUI: **Settings Manager > Keyboard > Application Shortcuts > Add**, set the command to the toggle script path, then press `Ctrl+Alt+Shift+R`.
+
 ### Other desktops
 
 Any mechanism that can run a shell command on a keypress will work. Point it at:
@@ -188,7 +199,7 @@ whisper-app/
 ### How recording control works
 
 ```
-KDE/GNOME shortcut
+Desktop shortcut (KDE/GNOME/XFCE)
   -> whisper-recording-toggle toggle
     -> writes "toggle" to ~/.whisper/control.fifo
       -> FifoController reads it

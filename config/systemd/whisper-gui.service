@@ -15,6 +15,7 @@ Environment="PATH=WHISPER_PROJECT_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONPATH=WHISPER_PROJECT_DIR/src"
 Environment="PYTHONUNBUFFERED=1"
 Environment="QT_QPA_PLATFORM=xcb"
+Environment="QT_QPA_SYSTEMTRAYICON=xcb"
 
 [Install]
 WantedBy=graphical-session.target
