@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -122,6 +123,26 @@ class StubCallbacks:
         self.on_error = kwargs.get("on_error")
 
 
+class StubSoundEffect:
+    class Status:
+        Ready = "ready"
+        Error = "error"
+
+    def __init__(self, *_args, **_kwargs):
+        self.statusChanged = MagicMock()
+        self.source = None
+        self.play_calls = 0
+
+    def setSource(self, source):
+        self.source = source
+
+    def status(self):
+        return self.Status.Ready
+
+    def play(self):
+        self.play_calls += 1
+
+
 @pytest.fixture
 def patched_window(monkeypatch, qt_app):
     monkeypatch.setattr(module, "WhisperRuntimeConfig", StubRuntimeConfig)
@@ -132,6 +153,8 @@ def patched_window(monkeypatch, qt_app):
     monkeypatch.setattr(module, "WhisperRecordingController", lambda *_, **__: StubRecordingController())
     monkeypatch.setattr(module, "RecordingEventCallbacks", StubCallbacks)
     monkeypatch.setattr(module, "ProjectManager", lambda *_, **__: MagicMock())
+    monkeypatch.setattr(module, "QSoundEffect", StubSoundEffect)
+    monkeypatch.setattr(module, "_completion_sound_path", lambda: Path(__file__))
 
     class DummyController:
         pass
@@ -147,6 +170,8 @@ def test_whisper_gui_recording_flow(patched_window):
     assert window.start_recording() is None
     window.stop_recording()
     window.presenter.recording_finished.emit()
+    assert window.completion_sound is not None
+    assert window.completion_sound.play_calls == 2
     window._on_presenter_transcription_ready("text")
     window._on_presenter_status_message("status")
     window._on_codex_error("err")

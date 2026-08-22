@@ -26,7 +26,7 @@ except ImportError:
     sys.exit(1)
 
 try:
-    from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+    from PyQt6.QtMultimedia import QSoundEffect
     _HAS_MULTIMEDIA = True
 except ImportError:
     _HAS_MULTIMEDIA = False
@@ -54,6 +54,11 @@ from .projects import ProjectManager
 from .ui import build_main_interface, configure_tray
 
 logger = logging.getLogger(__name__)
+
+
+def _completion_sound_path() -> Path:
+    return Path(__file__).resolve().parent.parent.parent.parent / "assets" / "completion.wav"
+
 
 class WhisperGUI(QMainWindow):
     """Main GUI window for Whisper voice recording application"""
@@ -119,29 +124,24 @@ class WhisperGUI(QMainWindow):
         self.command_emitter.start_signal.connect(self.start_recording)
         self.command_emitter.stop_signal.connect(self.stop_recording)
 
-        # Initialize audio player for completion sound (optional)
-        self.media_player: Optional[QMediaPlayer] = None
+        # Preload the optional completion WAV as a reusable, low-latency sound effect.
+        self.completion_sound: Optional[QSoundEffect] = None
         if _HAS_MULTIMEDIA:
             try:
-                self._audio_output = QAudioOutput()
-                self.media_player = QMediaPlayer()
-                self.media_player.setAudioOutput(self._audio_output)
-                self.media_player.errorOccurred.connect(
-                    lambda error, error_string: logger.error(
-                        f"Media player error: {error} - {error_string}"
-                    )
-                )
-                # Look for completion sound relative to package root
-                sound_path = Path(__file__).resolve().parent.parent.parent.parent / "assets" / "completion.wav"
+                sound_path = _completion_sound_path()
                 if sound_path.exists():
-                    self.media_player.setSource(QUrl.fromLocalFile(str(sound_path)))
+                    self.completion_sound = QSoundEffect(self)
+                    self.completion_sound.statusChanged.connect(
+                        self._on_completion_sound_status_changed
+                    )
+                    self.completion_sound.setSource(QUrl.fromLocalFile(str(sound_path)))
                     logger.info("Loaded completion sound: %s", sound_path)
                 else:
                     logger.info("Completion sound not found at %s, skipping", sound_path)
-                    self.media_player = None
+                    self.completion_sound = None
             except Exception:
-                logger.info("Could not initialize audio player, completion sound disabled")
-                self.media_player = None
+                logger.exception("Could not initialize completion sound; playback disabled")
+                self.completion_sound = None
         else:
             logger.info("PyQt6.QtMultimedia not available, completion sound disabled")
 
@@ -377,9 +377,17 @@ class WhisperGUI(QMainWindow):
         self.tray_status.setText("🎤 Ready")
         self._set_tray_icon_green()  # Change icon back to green when transcription is done
         # Play completion sound
-        if self.media_player is not None:
+        if self.completion_sound is not None:
             logger.debug("Playing completion sound")
-            self.media_player.play()
+            self.completion_sound.play()
+
+    def _on_completion_sound_status_changed(self) -> None:
+        """Log asynchronous failures while preloading the completion WAV."""
+        if (
+            self.completion_sound is not None
+            and self.completion_sound.status() == QSoundEffect.Status.Error
+        ):
+            logger.error("Could not load completion sound: %s", _completion_sound_path())
 
     def _on_presenter_recording_started(self):
         """Update UI on recording start."""
