@@ -9,6 +9,7 @@ Usage:
     whisper-recording-toggle start        # Start recording
     whisper-recording-toggle stop         # Stop recording
     whisper-recording-toggle toggle       # Toggle recording
+    whisper-recording-toggle history      # Open transcript clipboard history
     whisper-recording-toggle status       # Check if GUI is running
 """
 
@@ -76,14 +77,14 @@ def main():
         print(f"GUI is running (PID: {gui_pid})")
         sys.exit(0)
 
-    if action in ("toggle", "start", "stop"):
+    if action in ("toggle", "start", "stop", "history"):
         if send_command(action):
             sys.exit(0)
         else:
             sys.exit(1)
 
     print(f"❌ Unknown action: {action}", file=sys.stderr)
-    print("Valid actions: start, stop, toggle, status")
+    print("Valid actions: start, stop, toggle, history, status")
     sys.exit(1)
 
 

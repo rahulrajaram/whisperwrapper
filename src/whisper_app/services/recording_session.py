@@ -54,13 +54,12 @@ class RecordingSession:
         self._frames = []
         self._recording = True
         try:
-            self._stream = self.audio_service.audio.open(
+            self._stream = self.audio_service.open_input_stream(
                 format=self.settings.format,
                 channels=self.settings.channels,
                 rate=self.settings.rate,
                 input=True,
                 frames_per_buffer=self.settings.chunk,
-                input_device_index=self.audio_service.input_device_index,
                 start=False,
             )
             self._stream.start_stream()

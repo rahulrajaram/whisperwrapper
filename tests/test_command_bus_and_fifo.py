@@ -114,6 +114,17 @@ def test_command_bus_subscribes_and_dispatches():
     assert seen == ["start"]
 
 
+def test_command_bus_dispatches_transcript_history_requests():
+    controller = MagicMock(spec=CommandController)
+    bus = CommandBus(controller)
+    seen: List[str] = []
+    bus.subscribe("history", lambda cmd: seen.append(cmd))
+
+    bus._dispatch("history")
+
+    assert seen == ["history"]
+
+
 def test_command_bus_start_stop(monkeypatch):
     controller = MagicMock(spec=CommandController)
     bus = CommandBus(controller)

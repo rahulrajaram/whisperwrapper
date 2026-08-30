@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 from ..config import WhisperRuntimeConfig
-from ..services import AudioInputService, RecordingSession, RecordingSettings, TranscriptionService
-
+from ..services import (
+    AudioInputService,
+    CommandRecordingLifecycleAdapter,
+    RecordingLifecycleAdapter,
+    RecordingSession,
+    RecordingSettings,
+    TranscriptionService,
+)
 
 RecordingCallback = Callable[[], None]
 ResultCallback = Callable[[str], None]
@@ -46,9 +52,13 @@ class WhisperRecordingController(RecordingController):
         runtime_config: Optional[WhisperRuntimeConfig] = None,
         callbacks: Optional[RecordingEventCallbacks] = None,
         recording_settings: Optional[RecordingSettings] = None,
+        lifecycle_adapter: Optional[RecordingLifecycleAdapter] = None,
     ) -> None:
         self.runtime_config = runtime_config or WhisperRuntimeConfig()
         self.callbacks = callbacks or RecordingEventCallbacks()
+        self.lifecycle_adapter = lifecycle_adapter or CommandRecordingLifecycleAdapter(
+            self.runtime_config.recording_lifecycle
+        )
         self.audio_service = AudioInputService(
             headless=self.runtime_config.headless,
             paths=self.runtime_config.paths,
@@ -79,12 +89,19 @@ class WhisperRecordingController(RecordingController):
     def start(self) -> None:
         if self.session.recording:
             return
+        self.lifecycle_adapter.before_recording_start()
         self.session.start()
+        if not self.session.recording:
+            self.lifecycle_adapter.after_recording_stop()
+            return
         if self.session.recording and self.callbacks.on_start:
             self.callbacks.on_start()
 
     def stop(self) -> Optional[str]:
-        frames = self.session.stop()
+        try:
+            frames = self.session.stop()
+        finally:
+            self.lifecycle_adapter.after_recording_stop()
         if not frames:
             return None
 
@@ -110,9 +127,13 @@ class WhisperRecordingController(RecordingController):
         return None
 
     def cleanup(self) -> None:
-        self.session.cleanup()
+        try:
+            self.session.cleanup()
+        finally:
+            self.lifecycle_adapter.after_recording_stop()
 
     def _handle_error(self, exc: Exception) -> None:
+        self.lifecycle_adapter.after_recording_stop()
         self._last_error = str(exc)
         if self.callbacks.on_error:
             self.callbacks.on_error(str(exc))

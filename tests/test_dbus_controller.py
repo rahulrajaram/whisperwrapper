@@ -346,8 +346,9 @@ class TestDBusControllerFallback(unittest.TestCase):
             obj.Start()
             obj.Stop()
             obj.Toggle()
+            obj.History()
 
-        self.assertEqual(events, ["start", "stop", "toggle"])
+        self.assertEqual(events, ["start", "stop", "toggle", "history"])
 
     def test_dbus_try_start_success(self):
         from src.whisper_app import dbus_controller as module

@@ -31,7 +31,9 @@ class ClickableLabel(QLabel):
             return
 
         shift = event.modifiers() & Qt.KeyboardModifier.ShiftModifier
-        ctrl = event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)
+        ctrl = event.modifiers() & (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier
+        )
         self.clicked.emit(self.row_index, bool(shift), bool(ctrl))
         super().mousePressEvent(event)
 
@@ -45,10 +47,8 @@ def refresh_history_table(gui: "WhisperGUI") -> None:
 
     # Enable context menu on table
     table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-    if not hasattr(gui, '_history_context_menu_connected'):
-        table.customContextMenuRequested.connect(
-            lambda pos: _show_recording_context_menu(gui, pos)
-        )
+    if not hasattr(gui, "_history_context_menu_connected"):
+        table.customContextMenuRequested.connect(lambda pos: _show_recording_context_menu(gui, pos))
         gui._history_context_menu_connected = True
 
     for row, item in enumerate(history):
@@ -90,8 +90,8 @@ def refresh_history_table(gui: "WhisperGUI") -> None:
 
 def _on_row_right_clicked(gui: "WhisperGUI", row: int) -> None:
     """Handle right-click on a row from the label widget."""
-    from PyQt6.QtGui import QCursor
     from PyQt6.QtCore import QPoint
+    from PyQt6.QtGui import QCursor
 
     # Get the global cursor position for the context menu
     cursor_pos = QCursor.pos()
@@ -119,7 +119,7 @@ def _show_recording_context_menu(gui: "WhisperGUI", position) -> None:
 
     # Copy action - only available for single selection (highlighted)
     copy_action = menu.addAction("📋 Copy to Clipboard")
-    copy_action.triggered.connect(lambda: gui.presenter.copy_to_clipboard(row))
+    copy_action.triggered.connect(lambda: gui.presenter.copy_filtered_to_clipboard(row))
     if is_multi_select:
         copy_action.setEnabled(False)
     else:
@@ -182,12 +182,7 @@ def _copy_selected_to_project(gui: "WhisperGUI") -> None:
         return
 
     project_name, ok = QInputDialog.getItem(
-        gui,
-        "Copy to Project",
-        "Select target project:",
-        project_names,
-        0,
-        False
+        gui, "Copy to Project", "Select target project:", project_names, 0, False
     )
 
     if ok and project_name:
@@ -207,12 +202,7 @@ def _copy_recording_to_project(gui: "WhisperGUI", row: int) -> None:
         return
 
     project_name, ok = QInputDialog.getItem(
-        gui,
-        "Copy to Project",
-        "Select target project:",
-        project_names,
-        0,
-        False
+        gui, "Copy to Project", "Select target project:", project_names, 0, False
     )
 
     if ok and project_name:
@@ -232,12 +222,7 @@ def _move_selected_to_project(gui: "WhisperGUI") -> None:
         return
 
     project_name, ok = QInputDialog.getItem(
-        gui,
-        "Move to Project",
-        "Select target project:",
-        project_names,
-        0,
-        False
+        gui, "Move to Project", "Select target project:", project_names, 0, False
     )
 
     if ok and project_name:
@@ -257,12 +242,7 @@ def _move_recording_to_project(gui: "WhisperGUI", row: int) -> None:
         return
 
     project_name, ok = QInputDialog.getItem(
-        gui,
-        "Move to Project",
-        "Select target project:",
-        project_names,
-        0,
-        False
+        gui, "Move to Project", "Select target project:", project_names, 0, False
     )
 
     if ok and project_name:

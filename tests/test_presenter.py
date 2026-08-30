@@ -218,6 +218,22 @@ def test_copy_to_clipboard_uses_helper(presenter_setup):
     presenter._copy_text_to_clipboard.assert_called_once_with("alpha")
 
 
+def test_copy_filtered_row_does_not_use_the_global_history_index(
+    presenter_setup,
+):
+    presenter, _, _ = presenter_setup
+    presenter.history = [
+        {"timestamp": "other", "text": "wrong", "project_id": "other"},
+        {"timestamp": "current", "text": "right", "project_id": "current"},
+    ]
+    presenter.get_filtered_history = MagicMock(return_value=[presenter.history[1]])
+    presenter._copy_text_to_clipboard.reset_mock()
+
+    presenter.copy_filtered_to_clipboard(0)
+
+    presenter._copy_text_to_clipboard.assert_called_once_with("right")
+
+
 def test_process_with_codex_updates_selected_row(presenter_setup):
     presenter, _, storage = presenter_setup
     presenter.history = [

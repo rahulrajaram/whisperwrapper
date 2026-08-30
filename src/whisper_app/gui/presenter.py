@@ -110,8 +110,11 @@ class WhisperPresenter(QObject):
                     result = self._recording_thread.wait(timeout_ms)
                     if not result:
                         import logging
+
                         logger = logging.getLogger(__name__)
-                        logger.warning("Recording thread did not exit within %dms timeout", timeout_ms)
+                        logger.warning(
+                            "Recording thread did not exit within %dms timeout", timeout_ms
+                        )
                 except TypeError:
                     # Mock/fake thread doesn't support timeout parameter
                     self._recording_thread.wait()
@@ -120,6 +123,7 @@ class WhisperPresenter(QObject):
     def shutdown(self) -> None:
         """Ensure background workers are stopped when the app exits."""
         import logging
+
         logger = logging.getLogger(__name__)
 
         if self.is_recording:
@@ -150,6 +154,21 @@ class WhisperPresenter(QObject):
         if self._copy_text_to_clipboard(text):
             preview = text[:40]
             self.status_message.emit(f"✅ Copied to clipboard: {preview}...")
+
+    def copy_filtered_to_clipboard(self, row: int) -> None:
+        """Copy the visible project-filtered row rather than a global index."""
+        visible_history = self.get_filtered_history()
+        if not 0 <= row < len(visible_history):
+            return
+        self.copy_text_to_clipboard(str(visible_history[row].get("text", "")))
+
+    def copy_text_to_clipboard(self, text: str) -> bool:
+        """Copy an explicit transcript without relying on a mutable row index."""
+        copied = self._copy_text_to_clipboard(text)
+        if copied:
+            preview = text[:40]
+            self.status_message.emit(f"✅ Copied to clipboard: {preview}...")
+        return copied
 
     def toggle_protection(self, row: int) -> None:
         if row >= len(self.history):
@@ -214,13 +233,9 @@ class WhisperPresenter(QObject):
                     f"🗑 Deleted {deleted_count} items ({protected_in_project} protected in {current_project.name})"
                 )
             else:
-                self.status_message.emit(
-                    f"🗑 {current_project.name} history cleared"
-                )
+                self.status_message.emit(f"🗑 {current_project.name} history cleared")
         else:
-            self.status_message.emit(
-                f"🔒 All items in {current_project.name} are protected"
-            )
+            self.status_message.emit(f"🔒 All items in {current_project.name} are protected")
 
     # ------------------------------------------------------------------
     # Codex processing

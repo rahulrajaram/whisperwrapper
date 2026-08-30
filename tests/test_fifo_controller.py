@@ -130,7 +130,7 @@ class TestFIFOCommandController(unittest.TestCase):
         """Test that multiple commands are dispatched correctly."""
         self.controller.start()
 
-        commands = ["start", "stop", "toggle"]
+        commands = ["start", "stop", "toggle", "history"]
 
         def send_commands():
             time.sleep(0.1)

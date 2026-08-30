@@ -5,9 +5,12 @@ from __future__ import annotations
 import importlib.machinery
 import os
 import sys
+import wave
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
+
+import numpy as np
 
 LOG_PATH = Path(os.environ.get("WHISPER_TEST_LOG", ".whisper_test.log"))
 
@@ -46,6 +49,44 @@ class _StubWhisperModel:
         return iter(segments), _StubInfo()
 
 
+class _StubVadOptions:
+    def __init__(self, **kwargs):
+        self.options = kwargs
+
+
+def _decode_audio(filename: str, sampling_rate: int = 16000) -> np.ndarray:
+    """Decode the 16-bit mono WAVs produced by service tests."""
+
+    with wave.open(filename, "rb") as wav:
+        channels = wav.getnchannels()
+        source_rate = wav.getframerate()
+        samples = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2").astype(np.float32)
+
+    if channels > 1:
+        samples = samples.reshape(-1, channels).mean(axis=1)
+    samples /= 32768.0
+    if source_rate == sampling_rate or samples.size == 0:
+        return samples
+
+    source_positions = np.arange(samples.size)
+    target_size = int(samples.size * sampling_rate / source_rate)
+    target_positions = np.linspace(0, samples.size - 1, target_size)
+    return np.interp(target_positions, source_positions, samples).astype(np.float32)
+
+
+def _get_speech_timestamps(audio, _vad_options=None, sampling_rate=16000):
+    del sampling_rate
+    if audio.size == 0 or not np.any(np.abs(audio) > 1e-6):
+        return []
+    return [{"start": 0, "end": len(audio)}]
+
+
+def _collect_chunks(audio, chunks, sampling_rate=16000):
+    del sampling_rate
+    collected = np.concatenate([audio[chunk["start"] : chunk["end"]] for chunk in chunks])
+    return [collected], []
+
+
 def _install_faster_whisper_stub() -> ModuleType:
     """Install a lightweight faster_whisper stub so integration tests always run."""
 
@@ -54,7 +95,17 @@ def _install_faster_whisper_stub() -> ModuleType:
     stub.__faster_whisper_stub__ = True  # type: ignore[attr-defined]
     stub.__file__ = str(LOG_PATH)
     stub.__spec__ = importlib.machinery.ModuleSpec("faster_whisper", loader=None)  # type: ignore[arg-type]
+    stub.__path__ = []  # type: ignore[attr-defined]
     stub.WhisperModel = _StubWhisperModel  # type: ignore[attr-defined]
+
+    audio_stub = ModuleType("faster_whisper.audio")
+    audio_stub.decode_audio = _decode_audio  # type: ignore[attr-defined]
+    vad_stub = ModuleType("faster_whisper.vad")
+    vad_stub.VadOptions = _StubVadOptions  # type: ignore[attr-defined]
+    vad_stub.collect_chunks = _collect_chunks  # type: ignore[attr-defined]
+    vad_stub.get_speech_timestamps = _get_speech_timestamps  # type: ignore[attr-defined]
+    sys.modules["faster_whisper.audio"] = audio_stub
+    sys.modules["faster_whisper.vad"] = vad_stub
     return stub
 
 

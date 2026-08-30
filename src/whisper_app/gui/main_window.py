@@ -3,23 +3,32 @@
 Whisper GUI - A minimal PyQt6 application for voice recording with history buffer
 """
 
-import sys
+import logging
 import os
 import signal
-import logging
+import sys
 import time
 from pathlib import Path
 from typing import Optional
 
 try:
-    from PyQt6.QtWidgets import (
-        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QTableWidget, QLabel, QStatusBar,
-        QSystemTrayIcon, QMenu, QSplitter
-    )
-    from PyQt6.QtCore import Qt, pyqtSignal, QObject, QMetaObject, pyqtSlot, QUrl
+    from PyQt6.QtCore import QMetaObject, QObject, Qt, QTimer, QUrl, pyqtSignal, pyqtSlot
     from PyQt6.QtGui import QColor, QFont, QIcon
-    from PyQt6.QtWidgets import QHeaderView
+    from PyQt6.QtWidgets import (
+        QApplication,
+        QHBoxLayout,
+        QHeaderView,
+        QLabel,
+        QMainWindow,
+        QMenu,
+        QPushButton,
+        QSplitter,
+        QStatusBar,
+        QSystemTrayIcon,
+        QTableWidget,
+        QVBoxLayout,
+        QWidget,
+    )
 except ImportError:
     print("PyQt6 is not installed!")
     print("Install with: pip install PyQt6")
@@ -27,6 +36,7 @@ except ImportError:
 
 try:
     from PyQt6.QtMultimedia import QSoundEffect
+
     _HAS_MULTIMEDIA = True
 except ImportError:
     _HAS_MULTIMEDIA = False
@@ -34,23 +44,41 @@ except ImportError:
 
 class CommandSignalEmitter(QObject):
     """Signal emitter for safely calling GUI methods from daemon threads"""
+
     toggle_signal = pyqtSignal()
     start_signal = pyqtSignal()
     stop_signal = pyqtSignal()
+    history_signal = pyqtSignal()
+
 
 from ..command_bus import CommandBus
 from ..config import WhisperRuntimeConfig
 from ..controllers import RecordingEventCallbacks, WhisperRecordingController
-from ..fifo_controller import FIFOCommandController
 from ..dbus_controller import DBusCommandController
+from ..fifo_controller import FIFOCommandController
 from ..hotkeys import HotkeyBackend
 from ..ipc_controller import CommandController
+from ..recipes import (
+    Recipe,
+    RecipeCatalogError,
+    launch_recipe_terminal,
+    load_recipe_catalog,
+    recipe_by_id,
+)
 from .actions import open_project_terminal, show_microphone_settings
 from .config import GUIStorageManager, SingletonLockError
 from .history_view import refresh_history_table as render_history_table
 from .presenter import WhisperPresenter
 from .project_sidebar import ProjectSidebar
 from .projects import ProjectManager
+from .transcript_picker import (
+    TranscriptPicker,
+    activate_x11_window,
+    active_x11_window,
+    paste_primary_selection,
+    transcript_choices,
+    x11_window_exists,
+)
 from .ui import build_main_interface, configure_tray
 
 logger = logging.getLogger(__name__)
@@ -100,9 +128,7 @@ class WhisperGUI(QMainWindow):
         self.storage = GUIStorageManager(self.runtime_config.paths)
         self.project_manager = ProjectManager(self.runtime_config.paths)
         self.presenter = WhisperPresenter(
-            self.recording_controller,
-            self.storage,
-            self.project_manager
+            self.recording_controller, self.storage, self.project_manager
         )
         self.presenter.recording_started.connect(self._on_presenter_recording_started)
         self.presenter.recording_finished.connect(self._on_presenter_recording_finished)
@@ -123,6 +149,10 @@ class WhisperGUI(QMainWindow):
         self.command_emitter.toggle_signal.connect(self._on_toggle_command)
         self.command_emitter.start_signal.connect(self.start_recording)
         self.command_emitter.stop_signal.connect(self.stop_recording)
+        self.command_emitter.history_signal.connect(self.show_transcript_picker)
+        self._transcript_picker: TranscriptPicker | None = None
+        self._transcript_target_window: str | None = None
+        self._recipe_catalog: tuple[Recipe, ...] = ()
 
         # Preload the optional completion WAV as a reusable, low-latency sound effect.
         self.completion_sound: Optional[QSoundEffect] = None
@@ -147,9 +177,17 @@ class WhisperGUI(QMainWindow):
 
         # Start the command bus (handles IPC communication)
         try:
-            self.command_bus.subscribe("toggle", lambda _cmd: self.command_emitter.toggle_signal.emit())
-            self.command_bus.subscribe("start", lambda _cmd: self.command_emitter.start_signal.emit())
+            self.command_bus.subscribe(
+                "toggle", lambda _cmd: self.command_emitter.toggle_signal.emit()
+            )
+            self.command_bus.subscribe(
+                "start", lambda _cmd: self.command_emitter.start_signal.emit()
+            )
             self.command_bus.subscribe("stop", lambda _cmd: self.command_emitter.stop_signal.emit())
+            self.command_bus.subscribe(
+                "history",
+                lambda _cmd: self.command_emitter.history_signal.emit(),
+            )
             self.command_bus.start()
             logger.info("Command bus started; listening for external commands")
         except Exception as e:
@@ -221,9 +259,122 @@ class WhisperGUI(QMainWindow):
             self.raise_()
             self.activateWindow()
 
+    def show_transcript_picker(self) -> None:
+        """Open transcript history while remembering the caller's caret window."""
+        if self._transcript_picker is not None:
+            if self._transcript_picker_is_live():
+                self._focus_transcript_picker()
+                return
+            logger.warning("Discarding stale transcript picker window")
+            self._transcript_picker.deleteLater()
+            self._transcript_picker = None
+
+        choices = transcript_choices(self.presenter.history)
+        try:
+            recipes = load_recipe_catalog()
+        except RecipeCatalogError as error:
+            logger.warning("Could not load launcher recipes: %s", error)
+            self._on_presenter_status_message(f"⚠️ Could not load launcher recipes: {error}")
+            recipes = ()
+        if not choices and not recipes:
+            self._on_presenter_status_message("❌ No transcript history or recipes available")
+            return
+
+        self._recipe_catalog = recipes
+        self._transcript_target_window = active_x11_window()
+        picker = TranscriptPicker(choices, recipes)
+        picker.paste_requested.connect(self._paste_transcript_choice)
+        picker.copy_requested.connect(self._copy_transcript_choice)
+        picker.recipe_requested.connect(self._launch_recipe)
+        picker.rejected.connect(self._cancel_transcript_picker)
+        picker.finished.connect(lambda _result: self._clear_transcript_picker())
+        self._transcript_picker = picker
+        self._focus_transcript_picker()
+
+    def _transcript_picker_is_live(self) -> bool:
+        picker = self._transcript_picker
+        if picker is None or not picker.isVisible():
+            return False
+        return x11_window_exists(str(int(picker.winId())))
+
+    def _focus_transcript_picker(self) -> None:
+        """Map the picker and explicitly focus its native X11 window."""
+        picker = self._transcript_picker
+        if picker is None:
+            return
+        picker.showNormal()
+        picker.raise_()
+        picker.activateWindow()
+        window_id = str(int(picker.winId()))
+        QTimer.singleShot(
+            50,
+            lambda: self._activate_mapped_transcript_picker(picker, window_id),
+        )
+
+    def _activate_mapped_transcript_picker(
+        self,
+        picker: TranscriptPicker,
+        window_id: str,
+    ) -> None:
+        """Focus a mapped picker unless it was closed or replaced meanwhile."""
+        if picker is not self._transcript_picker or not picker.isVisible():
+            return
+        picker.raise_()
+        picker.activateWindow()
+        if not activate_x11_window(window_id):
+            logger.warning("Could not activate transcript picker window %s", window_id)
+
+    def _clear_transcript_picker(self) -> None:
+        self._transcript_picker = None
+
+    def _copy_transcript_choice(self, text: str) -> None:
+        self.presenter.copy_text_to_clipboard(text)
+        self._restore_transcript_target(paste=False)
+
+    def _paste_transcript_choice(self, text: str) -> None:
+        copied = self.presenter.copy_text_to_clipboard(text)
+        self._restore_transcript_target(paste=copied)
+
+    def _launch_recipe(self, recipe_id: str) -> None:
+        target = self._transcript_target_window
+        self._transcript_target_window = None
+        recipe = recipe_by_id(self._recipe_catalog, recipe_id)
+        if recipe is None:
+            self._on_presenter_status_message(f"⚠️ Unknown launcher recipe: {recipe_id}")
+            activate_x11_window(target)
+            return
+        try:
+            launch_recipe_terminal(recipe, sys.executable)
+        except (OSError, RecipeCatalogError) as error:
+            logger.warning("Could not launch recipe %s: %s", recipe_id, error)
+            self._on_presenter_status_message(f"⚠️ Could not launch {recipe.title}: {error}")
+            activate_x11_window(target)
+            return
+        self._on_presenter_status_message(f"▶ Launched recipe: {recipe.title}")
+
+    def _cancel_transcript_picker(self) -> None:
+        self._restore_transcript_target(paste=False)
+
+    def _restore_transcript_target(self, *, paste: bool) -> None:
+        target = self._transcript_target_window
+        self._transcript_target_window = None
+        restored = activate_x11_window(target)
+        if not restored:
+            self._on_presenter_status_message(
+                "⚠️ Transcript copied, but the previous window could not be restored"
+            )
+            return
+        if paste:
+            QTimer.singleShot(80, self._paste_into_restored_window)
+
+    def _paste_into_restored_window(self) -> None:
+        if not paste_primary_selection():
+            self._on_presenter_status_message("⚠️ Transcript copied, but automatic paste failed")
+
     def tray_icon_activated(self, reason):
         """Handle tray icon activation (single click, double click, etc.)"""
         from PyQt6.QtWidgets import QSystemTrayIcon
+
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self.toggle_window()
 
@@ -273,7 +424,7 @@ class WhisperGUI(QMainWindow):
         # Step 3: Stop the IPC command controller (FIFO/DBus)
         # This may block briefly if waiting for reader thread to wake up
         try:
-            if hasattr(self, 'command_bus') and self.command_bus:
+            if hasattr(self, "command_bus") and self.command_bus:
                 logger.debug("Stopping command bus...")
                 self.command_bus.stop()
                 logger.info("Command bus stopped")
@@ -282,7 +433,7 @@ class WhisperGUI(QMainWindow):
 
         # Step 4: Hide tray icon and cleanup UI
         try:
-            if hasattr(self, 'tray_icon'):
+            if hasattr(self, "tray_icon"):
                 self.tray_icon.hide()
                 logger.debug("Tray icon hidden")
         except Exception as e:
@@ -338,8 +489,11 @@ class WhisperGUI(QMainWindow):
 
     def start_recording(self):
         """Start recording"""
-        logger.info("start_recording() invoked (is_recording=%s, _exiting=%s)",
-                    self.presenter.is_recording, self._exiting)
+        logger.info(
+            "start_recording() invoked (is_recording=%s, _exiting=%s)",
+            self.presenter.is_recording,
+            self._exiting,
+        )
 
         if self._exiting:
             logger.debug("Start recording ignored; application is exiting")
@@ -353,8 +507,11 @@ class WhisperGUI(QMainWindow):
 
     def stop_recording(self):
         """Stop recording"""
-        logger.info("stop_recording() invoked (is_recording=%s, _exiting=%s)",
-                    self.presenter.is_recording, self._exiting)
+        logger.info(
+            "stop_recording() invoked (is_recording=%s, _exiting=%s)",
+            self.presenter.is_recording,
+            self._exiting,
+        )
 
         if not self.presenter.is_recording:
             logger.debug("Stop ignored because presenter is not recording")
@@ -365,7 +522,6 @@ class WhisperGUI(QMainWindow):
         self.status_label.setText("⏳ Processing transcription...")
         self.stop_button.setEnabled(False)
         logger.debug("Stop recording request sent to presenter")
-
 
     def _on_presenter_recording_finished(self):
         """Handle recording completion"""
@@ -403,7 +559,7 @@ class WhisperGUI(QMainWindow):
     def _on_presenter_transcription_ready(self, transcription: str):
         """Handle successful transcription"""
         text_preview = transcription.strip()[:50]
-        self.status_label.setText(f"✅ Copied to clipboard: \"{text_preview}...\"")
+        self.status_label.setText(f'✅ Copied to clipboard: "{text_preview}..."')
         self.statusBar().showMessage("✅ Transcription copied to clipboard")
 
     def _on_presenter_status_message(self, message: str):
@@ -451,7 +607,6 @@ class WhisperGUI(QMainWindow):
     def refresh_history_table(self):
         """Refresh the history table display"""
         render_history_table(self)
-
 
     def on_table_cell_clicked(self, row: int, column: int):
         """Handle table cell clicks to select rows"""
@@ -554,7 +709,8 @@ def main():
         # Qt overrides our signal handlers here, so we use a different approach:
         # Install a Unix signal wakeup file descriptor that Qt WILL respect
         import socket
-        if hasattr(signal, 'set_wakeup_fd'):
+
+        if hasattr(signal, "set_wakeup_fd"):
             # Create a socket pair for signal wakeup
             signal_read_sock, signal_write_sock = socket.socketpair()
             signal_read_sock.setblocking(False)

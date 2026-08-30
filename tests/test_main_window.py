@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from whisper_app.recipes import Recipe
 from whisper_app.gui import main_window as module
 
 
@@ -50,6 +51,7 @@ class StubPresenter(QObject):
         self.selected_rows = set()  # For multi-select support
         self.last_selected_row = None
         self.codex_calls = 0
+        self.copied_text: list[str] = []
         self.project_manager = MagicMock()
 
     def start_recording(self):
@@ -79,6 +81,10 @@ class StubPresenter(QObject):
     def get_filtered_history(self, project_id=None):
         """Return history filtered by project (for testing, return all)."""
         return self.history
+
+    def copy_text_to_clipboard(self, text: str):
+        self.copied_text.append(text)
+        return True
 
     def shutdown(self):
         self.is_recording = False
@@ -150,7 +156,9 @@ def patched_window(monkeypatch, qt_app):
     monkeypatch.setattr(module, "WhisperPresenter", StubPresenter)
     monkeypatch.setattr(module, "CommandBus", StubCommandBus)
     monkeypatch.setattr(module, "HotkeyBackend", StubHotkeyBackend)
-    monkeypatch.setattr(module, "WhisperRecordingController", lambda *_, **__: StubRecordingController())
+    monkeypatch.setattr(
+        module, "WhisperRecordingController", lambda *_, **__: StubRecordingController()
+    )
     monkeypatch.setattr(module, "RecordingEventCallbacks", StubCallbacks)
     monkeypatch.setattr(module, "ProjectManager", lambda *_, **__: MagicMock())
     monkeypatch.setattr(module, "QSoundEffect", StubSoundEffect)
@@ -186,3 +194,143 @@ def test_whisper_gui_history_and_codex(patched_window):
     window.on_codex_button_clicked()
     assert window.presenter.codex_calls == 1
     window.refresh_history_table()
+
+
+def test_whisper_gui_subscribes_to_history_picker_command(patched_window):
+    assert "history" in patched_window.command_bus.handlers
+
+
+def test_visible_transcript_picker_is_explicitly_activated(
+    patched_window,
+    monkeypatch,
+):
+    class StubPicker:
+        def __init__(self):
+            self.show_calls = 0
+            self.raise_calls = 0
+            self.activate_calls = 0
+
+        def isVisible(self):
+            return True
+
+        def showNormal(self):
+            self.show_calls += 1
+
+        def raise_(self):
+            self.raise_calls += 1
+
+        def activateWindow(self):
+            self.activate_calls += 1
+
+        def winId(self):
+            return 456
+
+        def deleteLater(self):
+            raise AssertionError("live picker must not be discarded")
+
+    activated: list[str | None] = []
+    picker = StubPicker()
+    patched_window._transcript_picker = picker
+    monkeypatch.setattr(
+        module.QTimer,
+        "singleShot",
+        lambda _delay, callback: callback(),
+    )
+    monkeypatch.setattr(
+        module,
+        "activate_x11_window",
+        lambda window_id: activated.append(window_id) or True,
+    )
+    monkeypatch.setattr(module, "x11_window_exists", lambda _window_id: True)
+
+    patched_window.show_transcript_picker()
+
+    assert picker.show_calls == 1
+    assert picker.raise_calls == 2
+    assert picker.activate_calls == 2
+    assert activated == ["456"]
+
+
+def test_destroyed_transcript_picker_is_discarded_and_recreated(
+    patched_window,
+    monkeypatch,
+):
+    class StalePicker:
+        def __init__(self):
+            self.deleted = False
+
+        def isVisible(self):
+            return True
+
+        def winId(self):
+            return 456
+
+        def deleteLater(self):
+            self.deleted = True
+
+    stale = StalePicker()
+    patched_window._transcript_picker = stale
+    monkeypatch.setattr(module, "x11_window_exists", lambda _window_id: False)
+    monkeypatch.setattr(module, "active_x11_window", lambda: "123")
+    monkeypatch.setattr(patched_window, "_focus_transcript_picker", lambda: None)
+
+    patched_window.show_transcript_picker()
+
+    assert stale.deleted is True
+    assert patched_window._transcript_picker is not stale
+    assert patched_window._transcript_target_window == "123"
+
+
+def test_selected_transcript_is_copied_restored_and_pasted(
+    patched_window,
+    monkeypatch,
+):
+    restored: list[str | None] = []
+    pasted: list[bool] = []
+    patched_window._transcript_target_window = "123"
+    monkeypatch.setattr(
+        module,
+        "activate_x11_window",
+        lambda window_id: restored.append(window_id) or True,
+    )
+    monkeypatch.setattr(
+        module.QTimer,
+        "singleShot",
+        lambda _delay, callback: callback(),
+    )
+    monkeypatch.setattr(
+        module,
+        "paste_primary_selection",
+        lambda: pasted.append(True) or True,
+    )
+
+    patched_window._paste_transcript_choice("past transcript")
+
+    assert patched_window.presenter.copied_text == ["past transcript"]
+    assert restored == ["123"]
+    assert pasted == [True]
+    assert patched_window._transcript_target_window is None
+
+
+def test_selected_recipe_launches_in_a_new_terminal(patched_window, monkeypatch):
+    recipe = Recipe(
+        recipe_id="deepmetrics-health",
+        title="DeepMetrics health",
+        description="Inspect system health",
+        keywords=("health",),
+        working_directory=Path("/tmp"),
+        commands=(("true",),),
+    )
+    launched: list[tuple[Recipe, str]] = []
+    patched_window._recipe_catalog = (recipe,)
+    patched_window._transcript_target_window = "123"
+    monkeypatch.setattr(
+        module,
+        "launch_recipe_terminal",
+        lambda selected, python: launched.append((selected, python)),
+    )
+
+    patched_window._launch_recipe("deepmetrics-health")
+
+    assert launched == [(recipe, module.sys.executable)]
+    assert patched_window._transcript_target_window is None

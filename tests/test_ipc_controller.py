@@ -46,11 +46,12 @@ class TestCommandType(unittest.TestCase):
         self.assertEqual(CommandType.START.value, "start")
         self.assertEqual(CommandType.STOP.value, "stop")
         self.assertEqual(CommandType.TOGGLE.value, "toggle")
+        self.assertEqual(CommandType.HISTORY.value, "history")
 
     def test_command_count(self):
         """Test that we have the expected number of commands."""
         commands = list(CommandType)
-        self.assertEqual(len(commands), 3)
+        self.assertEqual(len(commands), 4)
 
 
 class TestCommandControllerInterface(unittest.TestCase):
@@ -175,8 +176,9 @@ class TestCommandControllerInterface(unittest.TestCase):
         self.controller._dispatch_command("start")
         self.controller._dispatch_command("stop")
         self.controller._dispatch_command("toggle")
+        self.controller._dispatch_command("history")
 
-        self.assertEqual(received_commands, ["start", "stop", "toggle"])
+        self.assertEqual(received_commands, ["start", "stop", "toggle", "history"])
 
     def test_is_running_property_read_only(self):
         """Test that is_running property reflects actual state."""

@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List
 
-import logging
-
 from .ipc_controller import CommandController
-
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +16,14 @@ CommandHandler = Callable[[str], None]
 @dataclass
 class CommandBus:
     controller: CommandController
-    _subscribers: Dict[str, List[CommandHandler]] = field(default_factory=lambda: {
-        "start": [],
-        "stop": [],
-        "toggle": [],
-    })
+    _subscribers: Dict[str, List[CommandHandler]] = field(
+        default_factory=lambda: {
+            "start": [],
+            "stop": [],
+            "toggle": [],
+            "history": [],
+        }
+    )
 
     def __post_init__(self) -> None:
         self.controller.on_command_received = self._dispatch
@@ -46,11 +47,15 @@ class CommandBus:
         logger.info("Dispatching command '%s' to %d handler(s)", command, len(handlers))
         for idx, handler in enumerate(handlers):
             try:
-                logger.debug("Calling handler %d/%d for command '%s'", idx + 1, len(handlers), command)
+                logger.debug(
+                    "Calling handler %d/%d for command '%s'", idx + 1, len(handlers), command
+                )
                 handler(command)
                 logger.debug("Handler %d/%d completed successfully", idx + 1, len(handlers))
             except Exception as e:
-                logger.exception("Handler %d/%d failed for command '%s': %s", idx + 1, len(handlers), command, e)
+                logger.exception(
+                    "Handler %d/%d failed for command '%s': %s", idx + 1, len(handlers), command, e
+                )
 
 
 __all__ = ["CommandBus"]

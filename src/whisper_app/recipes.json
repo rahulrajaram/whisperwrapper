@@ -1,0 +1,24 @@
+{
+  "recipes": [
+    {
+      "id": "deepmetrics-development",
+      "title": "DeepMetrics — Continue development",
+      "description": "Open a new interactive Codex session rooted in the DeepMetrics repository.",
+      "keywords": ["deepmetrics", "development", "develop", "codex", "code", "agent"],
+      "working_directory": "~/Documents/deepmetrics",
+      "commands": [
+        ["~/.local/bin/codex"]
+      ]
+    },
+    {
+      "id": "deepmetrics-health",
+      "title": "DeepMetrics — System health summary",
+      "description": "Run the non-privileged CPU, memory, swap, I/O, sensor, and Docker health summary.",
+      "keywords": ["deepmetrics", "health", "status", "system", "probe", "diagnostics", "summary"],
+      "working_directory": "~/Documents/deepmetrics",
+      "commands": [
+        ["venv/bin/python", "-m", "deepmetrics", "--summary", "--no-bpf"]
+      ]
+    }
+  ]
+}

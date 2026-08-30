@@ -41,12 +41,12 @@ def open_project_terminal(gui: "WhisperGUI") -> None:
 
 
 def show_microphone_settings(gui: "WhisperGUI") -> None:
-    from PyQt6.QtWidgets import QComboBox, QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+    from PyQt6.QtWidgets import QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
     try:
         audio_service = gui.recording_controller.audio_service
-        devices = audio_service.list_input_devices()
-        if not devices:
+        choices = audio_service.list_input_choices()
+        if not choices:
             gui.status_label.setText("❌ No input devices found")
             return
 
@@ -59,15 +59,13 @@ def show_microphone_settings(gui: "WhisperGUI") -> None:
         layout.addWidget(label)
 
         combo = QComboBox()
-        for device in devices:
-            combo.addItem(device.name, device.index)
+        for choice in choices:
+            combo.addItem(choice.label, choice.key)
 
-        current_device = audio_service.input_device_index
-        if current_device is not None:
-            for idx, device in enumerate(devices):
-                if device.index == current_device:
-                    combo.setCurrentIndex(idx)
-                    break
+        for idx, choice in enumerate(choices):
+            if choice.key == audio_service.input_route:
+                combo.setCurrentIndex(idx)
+                break
 
         layout.addWidget(combo)
 
@@ -77,11 +75,9 @@ def show_microphone_settings(gui: "WhisperGUI") -> None:
 
         def save_settings():
             selected_index = combo.currentIndex()
-            device_idx = combo.itemData(selected_index)
-            audio_service.input_device_index = device_idx
-            gui.status_label.setText(
-                f"✅ Microphone set to: {combo.currentText()}"
-            )
+            route = combo.itemData(selected_index)
+            audio_service.input_route = route
+            gui.status_label.setText(f"✅ Microphone set to: {combo.currentText()}")
             gui.statusBar().showMessage("Microphone settings saved")
             dialog.accept()
 

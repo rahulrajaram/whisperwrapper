@@ -82,6 +82,7 @@ class GUIStorageManager:
     def load_history(self) -> List[dict]:
         try:
             if self.history_path.exists():
+                self.history_path.chmod(0o600)
                 return json.loads(self.history_path.read_text())
         except Exception:
             pass
@@ -91,6 +92,7 @@ class GUIStorageManager:
         try:
             self.history_path.parent.mkdir(parents=True, exist_ok=True)
             self.history_path.write_text(json.dumps(list(history), indent=2))
+            self.history_path.chmod(0o600)
         except Exception:
             pass
 

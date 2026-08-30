@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import math
 import struct
-from typing import List
 from types import SimpleNamespace
+from typing import List
 
 from tests.helpers import ensure_whisper_module
 
@@ -31,9 +31,13 @@ def test_cli_headless_end_to_end(monkeypatch, tmp_path):
     class StubAudioService:
         def __init__(self, *_, **__):
             self.input_device_index = 0
+            self.input_route = "system"
 
-        def list_input_devices(self):
-            return [SimpleNamespace(index=0, name="Stub Mic")]
+        def list_input_choices(self):
+            return [
+                SimpleNamespace(key="system", label="System default (automatic)"),
+                SimpleNamespace(key="portaudio:Stub Mic", label="Stub Mic"),
+            ]
 
         def select_default_device(self):
             return 0

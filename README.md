@@ -150,18 +150,22 @@ The toggle script also supports `start`, `stop`, and `status` subcommands.
 ## Usage
 
 1. **Start recording**: Press your keyboard shortcut or click the record button in the GUI
-2. **Speak**: Audio is captured via your selected microphone
+2. **Speak**: Audio is captured from the current system default microphone
 3. **Stop recording**: Press the shortcut again or click stop
 4. **View result**: Transcription appears in the history table — click any row to copy to clipboard
 
 ### Microphone selection
 
-On first run you will be prompted to select a microphone. To reconfigure later:
-
-```bash
-rm ~/.whisper/config
-systemctl --user restart whisper-gui
-```
+Whisper follows the system default automatically, including PipeWire hot-plug
+fallback. The GUI's microphone settings lists the real PipeWire sources (for
+example, Built-in Audio, Scarlett, and TONOR) and can set an explicit override.
+That choice is stored by stable source name rather than a transient PortAudio
+index. Choose **System default (automatic)** to return routing control to the
+desktop; explicitly selecting TONOR does not add it to the automatic fallback
+order. When PipeWire is available it is the authoritative device inventory, so
+the dialog does not expose duplicate ALSA adapters such as `pulse`, `default`,
+or `sysdefault`. Physical PortAudio devices appear only as a degraded fallback
+when PipeWire discovery itself is unavailable.
 
 ### Completion sound
 
@@ -207,6 +211,24 @@ Desktop shortcut (KDE/GNOME/XFCE)
           -> start or stop recording
 ```
 
+### Optional recording lifecycle hook
+
+Whisper can notify one external integration at recording boundaries without
+knowing what that integration controls. Set
+`WHISPER_RECORDING_LIFECYCLE_COMMAND` to a shell-style argument string. Whisper
+parses it without invoking a shell and appends either `starting` immediately
+before capture or `stopped` immediately after capture and before transcription.
+
+```ini
+[Service]
+Environment="WHISPER_RECORDING_LIFECYCLE_COMMAND=/path/to/integration"
+```
+
+The hook is optional, has a ten-second timeout, and fails open: a missing,
+slow, or unsuccessful integration is logged but never prevents recording or
+transcription. Browser, media, focus, and desktop policy belong in the external
+integration rather than Whisper.
+
 ## GPU / CUDA
 
 The app auto-detects CUDA. To verify:
@@ -243,7 +265,10 @@ for i in range(audio.get_device_count()):
     if info['maxInputChannels'] > 0:
         print(f'{i}: {info[\"name\"]}')
 "
-# Then: rm ~/.whisper/config && systemctl --user restart whisper-gui
+# Confirm the system route, then restart only if the service retained a stale
+# PortAudio handle (the app also retries this automatically once):
+pactl get-default-source
+systemctl --user restart whisper-gui
 ```
 
 **Shortcut triggers twice:**

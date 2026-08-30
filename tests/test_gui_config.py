@@ -17,6 +17,7 @@ def test_gui_storage_history_roundtrip(tmp_path):
 
     loaded = storage.load_history()
     assert loaded == history
+    assert storage.history_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_gui_storage_lock(tmp_path):

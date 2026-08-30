@@ -24,8 +24,8 @@ Fallback Behavior:
 
 import logging
 import threading
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 
 from .ipc_controller import CommandController, IPCControllerError
 
@@ -34,14 +34,16 @@ logger = logging.getLogger(__name__)
 # Try to import dbus, but don't fail if not available
 try:
     import dbus
-    from dbus.service import Object, method
     from dbus.mainloop.glib import DBusGMainLoop
+    from dbus.service import Object, method
+
     HAS_DBUS = True
 except ImportError:
     HAS_DBUS = False
     logger.debug("dbus-python not available, D-Bus controller will use fallback")
     # Provide a dummy Object class for type safety when dbus is not available
     Object = object
+
     def method(*args, **kwargs):
         return lambda f: f
 
@@ -63,7 +65,7 @@ class DBusCommandController(CommandController):
         Service: org.whisper.CommandControl
         Path: /org/whisper/CommandControl
         Interface: org.whisper.CommandControl
-        Methods: start, stop, toggle
+        Methods: start, stop, toggle, history
     """
 
     # D-Bus service constants
@@ -139,7 +141,7 @@ class DBusCommandController(CommandController):
             # Request the service name
             try:
                 # Use the proper flag constant
-                flag = getattr(dbus.bus, 'NAME_FLAG_REPLACE_EXISTING', 1)
+                flag = getattr(dbus.bus, "NAME_FLAG_REPLACE_EXISTING", 1)
                 bus.request_name(self.DBUS_SERVICE, flag)
             except (dbus.DBusException, AttributeError) as e:
                 if self.debug:
@@ -148,11 +150,7 @@ class DBusCommandController(CommandController):
 
             # Create the D-Bus object
             self._dbus_object = _WhisperCommandObject(
-                bus,
-                self.DBUS_PATH,
-                self.DBUS_INTERFACE,
-                self._dispatch_command,
-                debug=self.debug
+                bus, self.DBUS_PATH, self.DBUS_INTERFACE, self._dispatch_command, debug=self.debug
             )
 
             self._running = True
@@ -171,6 +169,7 @@ class DBusCommandController(CommandController):
         if self._fallback_controller is None:
             # Import here to avoid circular dependencies
             from .fifo_controller import FIFOCommandController
+
             self._fallback_controller = FIFOCommandController(debug=self.debug)
 
         # Copy the callback
@@ -222,7 +221,7 @@ class DBusCommandController(CommandController):
         """Send a command via D-Bus (for testing).
 
         Args:
-            command: Command to send ("start", "stop", or "toggle")
+            command: Command to send ("start", "stop", "toggle", or "history")
 
         Raises:
             IPCControllerError: If sending fails
@@ -248,6 +247,8 @@ class DBusCommandController(CommandController):
                 interface.Stop()
             elif command == "toggle":
                 interface.Toggle()
+            elif command == "history":
+                interface.History()
             else:
                 raise IPCControllerError(f"Unknown command: {command}")
 
@@ -281,26 +282,33 @@ class _WhisperCommandObject(Object):  # pragma: no cover - D-Bus object wrapper
         self.debug = debug
         self.interface = interface
 
-    @method(DBusCommandController.DBUS_INTERFACE, in_signature='', out_signature='')
+    @method(DBusCommandController.DBUS_INTERFACE, in_signature="", out_signature="")
     def Start(self):
         """D-Bus method: Start recording."""
         if self.debug:
             logger.debug("D-Bus method called: Start")
         self.dispatch_callback("start")
 
-    @method(DBusCommandController.DBUS_INTERFACE, in_signature='', out_signature='')
+    @method(DBusCommandController.DBUS_INTERFACE, in_signature="", out_signature="")
     def Stop(self):
         """D-Bus method: Stop recording."""
         if self.debug:
             logger.debug("D-Bus method called: Stop")
         self.dispatch_callback("stop")
 
-    @method(DBusCommandController.DBUS_INTERFACE, in_signature='', out_signature='')
+    @method(DBusCommandController.DBUS_INTERFACE, in_signature="", out_signature="")
     def Toggle(self):
         """D-Bus method: Toggle recording."""
         if self.debug:
             logger.debug("D-Bus method called: Toggle")
         self.dispatch_callback("toggle")
 
+    @method(DBusCommandController.DBUS_INTERFACE, in_signature="", out_signature="")
+    def History(self):
+        """Open the transcript clipboard picker."""
+        if self.debug:
+            logger.debug("D-Bus method called: History")
+        self.dispatch_callback("history")
 
-__all__ = ['DBusCommandController']
+
+__all__ = ["DBusCommandController"]

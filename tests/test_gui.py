@@ -51,19 +51,19 @@ class TestRecordingWorker(unittest.TestCase):
         self.assertEqual(self.stopped_capture.calls, [tuple()])
         self.assertEqual(self.finished_capture.calls, [tuple()])
 
-    def test_run_emits_error_when_no_audio(self):
+    def test_run_reports_no_speech_as_a_normal_empty_result(self):
         self.controller.stop.return_value = None
 
         self.worker.run()
 
         self.assertEqual(self.result_capture.calls, [])
-        self.assertEqual(self.error_capture.calls, [("No audio data was recorded",)])
-        # Expect initial status message plus explicit error status
+        self.assertEqual(self.error_capture.calls, [])
+        # Expect initial status message plus an explicit no-speech status.
         self.assertEqual(
             self.status_capture.calls,
             [
                 ("⏳ Stopping recording and processing audio... (this may take a minute)",),
-                ("❌ No audio data was recorded",),
+                ("ℹ️ No speech was detected",),
             ],
         )
         self.assertEqual(self.stopped_capture.calls, [tuple()])

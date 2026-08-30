@@ -11,8 +11,11 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from typing import Dict, Optional
 
+import numpy as np
 import pyaudio
 from faster_whisper import WhisperModel
+from faster_whisper.audio import decode_audio
+from faster_whisper.vad import VadOptions, collect_chunks, get_speech_timestamps
 
 from ..config import WhisperRuntimeConfig
 from ..replacements import apply_replacements, load_replacements
@@ -21,6 +24,34 @@ logger = logging.getLogger(__name__)
 
 GLOBAL_VOCABULARY_PATH = Path.home() / ".whisper" / "vocabulary.txt"
 GLOBAL_REPLACEMENTS_PATH = Path.home() / ".whisper" / "replacements.txt"
+WHISPER_SAMPLE_RATE = 16000
+
+
+def _speech_audio(filename: str) -> Optional[np.ndarray]:
+    """Return detected speech as 16 kHz mono audio, or ``None`` for silence.
+
+    This gate deliberately runs before Whisper. Without it, room noise is still
+    a valid decoder input and the generative model can hallucinate plausible
+    phrases even though nobody spoke.
+    """
+
+    audio = decode_audio(filename, sampling_rate=WHISPER_SAMPLE_RATE)
+    speech_timestamps = get_speech_timestamps(
+        audio,
+        VadOptions(
+            threshold=0.5,
+            min_speech_duration_ms=250,
+            min_silence_duration_ms=500,
+            speech_pad_ms=200,
+        ),
+    )
+    if not speech_timestamps:
+        return None
+
+    collected = collect_chunks(audio, speech_timestamps)
+    # faster-whisper 1.0 returned one array; 1.2 returns (arrays, metadata).
+    speech = np.concatenate(collected[0]) if isinstance(collected, tuple) else collected
+    return speech if speech.size else None
 
 
 class TranscriptionService:
@@ -144,28 +175,32 @@ class TranscriptionService:
             sample_width = pyaudio.get_sample_size(sample_format)
             audio_duration = len(audio_data) / (rate * channels * sample_width)
 
-            wav = wave.open(filename, "wb")
-            wav.setnchannels(channels)
-            wav.setsampwidth(sample_width)
-            wav.setframerate(rate)
-            wav.writeframes(audio_data)
-            wav.close()
+            with wave.open(filename, "wb") as wav:
+                wav.setnchannels(channels)
+                wav.setsampwidth(sample_width)
+                wav.setframerate(rate)
+                wav.writeframes(audio_data)
 
-            transcribe_kwargs = dict(
-                beam_size=5, initial_prompt=self._get_vocabulary_prompt()
-            )
+            vad_started = time.monotonic()
+            speech_audio = _speech_audio(filename)
+            vad_time = time.monotonic() - vad_started
+            if speech_audio is None:
+                logger.info(
+                    "No speech detected in %.1fs audio (VAD %.2fs); skipping Whisper inference",
+                    audio_duration,
+                    vad_time,
+                )
+                return None
+
+            transcribe_kwargs = dict(beam_size=5, initial_prompt=self._get_vocabulary_prompt())
 
             t0 = time.monotonic()
             if headless:
                 with open(os.devnull, "w") as devnull:
                     with redirect_stderr(devnull):
-                        segments, _info = self.model.transcribe(
-                            filename, **transcribe_kwargs
-                        )
+                        segments, _info = self.model.transcribe(speech_audio, **transcribe_kwargs)
             else:
-                segments, _info = self.model.transcribe(
-                    filename, **transcribe_kwargs
-                )
+                segments, _info = self.model.transcribe(speech_audio, **transcribe_kwargs)
 
             text = " ".join(segment.text for segment in segments).strip()
 
@@ -177,8 +212,14 @@ class TranscriptionService:
 
             realtime_factor = audio_duration / inference_time if inference_time > 0 else 0
             logger.info(
-                "Transcription: %.1fs audio → %.1fs inference (%.1fx realtime) on %s",
-                audio_duration, inference_time, realtime_factor, self.device,
+                "Transcription: %.1fs audio (%.1fs speech, %.2fs VAD) → "
+                "%.1fs inference (%.1fx realtime) on %s",
+                audio_duration,
+                len(speech_audio) / WHISPER_SAMPLE_RATE,
+                vad_time,
+                inference_time,
+                realtime_factor,
+                self.device,
             )
 
             del segments, _info

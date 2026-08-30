@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from typing import List
 
-import pytest
 from PyQt6.QtWidgets import QLabel, QMainWindow, QTableWidget
 
-from whisper_app.gui import actions as actions_module
 from whisper_app.gui.actions import open_project_terminal, show_microphone_settings
 from whisper_app.gui.history_view import refresh_history_table
 from whisper_app.gui.ui import build_main_interface
@@ -152,19 +150,22 @@ def test_open_project_terminal_failure(monkeypatch):
     assert "No terminal found" in gui.statusBar().messages[-1]
 
 
-class FakeDevice:
-    def __init__(self, index, name):
-        self.index = index
-        self.name = name
+@dataclass(frozen=True)
+class FakeInputChoice:
+    key: str
+    label: str
 
 
 class FakeAudioService:
     def __init__(self):
-        self.input_device_index = 2
-        self._devices = [FakeDevice(1, "Mic A"), FakeDevice(2, "Mic B")]
+        self.input_route = "system"
+        self._choices = [
+            FakeInputChoice("system", "System default (automatic)"),
+            FakeInputChoice("pipewire:tonor", "TONOR TC-777 Audio Device Mono"),
+        ]
 
-    def list_input_devices(self):
-        return self._devices
+    def list_input_choices(self):
+        return self._choices
 
 
 class StubSignal:
@@ -201,7 +202,7 @@ class StubComboBox:
     last_instance: "StubComboBox" | None = None
 
     def __init__(self):
-        self.items: List[tuple[str, int]] = []
+        self.items: List[tuple[str, str]] = []
         self._index = 0
         StubComboBox.last_instance = self
 
@@ -261,11 +262,9 @@ class StubLabel:
         pass
 
 
-def test_show_microphone_settings_updates_device(monkeypatch):
+def test_show_microphone_settings_offers_and_saves_tonor(monkeypatch):
     gui = FakeGUIForActions()
-    gui.recording_controller = type(
-        "RC", (), {"audio_service": FakeAudioService()}
-    )()
+    gui.recording_controller = type("RC", (), {"audio_service": FakeAudioService()})()
     StubButton.instances = []
 
     widget_module = ModuleType("PyQt6.QtWidgets")
@@ -279,22 +278,26 @@ def test_show_microphone_settings_updates_device(monkeypatch):
 
     show_microphone_settings(gui)
 
+    assert StubComboBox.last_instance is not None
+    assert StubComboBox.last_instance.items == [
+        ("System default (automatic)", "system"),
+        ("TONOR TC-777 Audio Device Mono", "pipewire:tonor"),
+    ]
+    StubComboBox.last_instance.setCurrentIndex(1)
     for btn in StubButton.instances:
-        btn.click()
-        if gui.recording_controller.audio_service.input_device_index == 2:
+        if btn.text_value == "OK":
+            btn.click()
             break
 
-    assert gui.recording_controller.audio_service.input_device_index == 2
+    assert gui.recording_controller.audio_service.input_route == "pipewire:tonor"
     assert "Microphone settings saved" in gui.statusBar().messages[-1]
 
 
 def test_show_microphone_settings_handles_missing_devices(monkeypatch):
     gui = FakeGUIForActions()
     audio_service = FakeAudioService()
-    audio_service._devices = []
-    gui.recording_controller = type(
-        "RC", (), {"audio_service": audio_service}
-    )()
+    audio_service._choices = []
+    gui.recording_controller = type("RC", (), {"audio_service": audio_service})()
 
     show_microphone_settings(gui)
 

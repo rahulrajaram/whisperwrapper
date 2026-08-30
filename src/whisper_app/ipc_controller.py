@@ -20,9 +20,11 @@ logger = logging.getLogger(__name__)
 
 class CommandType(Enum):
     """Valid command types."""
+
     START = "start"
     STOP = "stop"
     TOGGLE = "toggle"
+    HISTORY = "history"
 
 
 class IPCControllerError(Exception):
@@ -37,7 +39,7 @@ class CommandController(ABC):
     but all follow the same interface. This allows the GUI to work with any transport
     without knowing implementation details.
 
-    Commands are represented as strings: "start", "stop", "toggle"
+    Commands are represented as strings: "start", "stop", "toggle", "history"
 
     Usage:
         controller = FIFOCommandController()  # or DBusCommandController()
@@ -134,7 +136,7 @@ class CommandController(ABC):
 
 
 __all__ = [
-    'CommandController',
-    'CommandType',
-    'IPCControllerError',
+    "CommandController",
+    "CommandType",
+    "IPCControllerError",
 ]

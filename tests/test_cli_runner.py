@@ -16,13 +16,15 @@ from whisper_app.cli import WhisperCLI
 class StubAudioService:
     def __init__(self):
         self.input_device_index = None
-        self.devices = [
-            SimpleNamespace(index=0, name="Mic A"),
-            SimpleNamespace(index=1, name="Mic B"),
+        self.input_route = "system"
+        self.choices = [
+            SimpleNamespace(key="system", label="System default (automatic)"),
+            SimpleNamespace(key="pipewire:mic-a", label="Mic A"),
+            SimpleNamespace(key="pipewire:mic-b", label="Mic B"),
         ]
 
-    def list_input_devices(self):
-        return self.devices
+    def list_input_choices(self):
+        return self.choices
 
     def select_default_device(self):
         return 1
@@ -51,8 +53,14 @@ class StubCallbacks:
 
 @pytest.fixture(autouse=True)
 def patch_cli_dependencies(monkeypatch):
-    monkeypatch.setattr(cli_module, "WhisperRuntimeConfig", lambda **kwargs: SimpleNamespace(paths=SimpleNamespace(), hotkeys=SimpleNamespace()))
-    monkeypatch.setattr(cli_module, "WhisperRecordingController", lambda *args, **kwargs: StubRecordingController())
+    monkeypatch.setattr(
+        cli_module,
+        "WhisperRuntimeConfig",
+        lambda **kwargs: SimpleNamespace(paths=SimpleNamespace(), hotkeys=SimpleNamespace()),
+    )
+    monkeypatch.setattr(
+        cli_module, "WhisperRecordingController", lambda *args, **kwargs: StubRecordingController()
+    )
     monkeypatch.setattr(cli_module, "RecordingEventCallbacks", StubCallbacks)
 
 
@@ -80,30 +88,36 @@ def test_cli_write_to_fifo_no_path(monkeypatch):
 
 def test_cli_select_microphone_interactive(monkeypatch):
     controller = StubRecordingController()
-    monkeypatch.setattr(cli_module, "WhisperRecordingController", lambda *args, **kwargs: controller)
+    monkeypatch.setattr(
+        cli_module, "WhisperRecordingController", lambda *args, **kwargs: controller
+    )
 
-    inputs = iter(["", "0"])
+    inputs = iter([""])
     monkeypatch.setattr("builtins.input", lambda *args: next(inputs))
 
-    cli = WhisperCLI(headless=False, force_configure=True)
-    assert controller.audio_service.input_device_index == 1
+    WhisperCLI(headless=False, force_configure=True)
+    assert controller.audio_service.input_route == "system"
 
 
 def test_cli_select_microphone_invalid_input(monkeypatch):
     controller = StubRecordingController()
-    monkeypatch.setattr(cli_module, "WhisperRecordingController", lambda *args, **kwargs: controller)
+    monkeypatch.setattr(
+        cli_module, "WhisperRecordingController", lambda *args, **kwargs: controller
+    )
 
-    inputs = iter(["abc", "-1", "1"])
+    inputs = iter(["abc", "-1", "2"])
     monkeypatch.setattr("builtins.input", lambda *args: next(inputs))
 
-    cli = WhisperCLI(headless=False, force_configure=True)
-    assert controller.audio_service.input_device_index == 1
+    WhisperCLI(headless=False, force_configure=True)
+    assert controller.audio_service.input_route == "pipewire:mic-b"
 
 
 def test_cli_run_loop(monkeypatch):
     controller = StubRecordingController()
-    controller.audio_service.input_device_index = 0
-    monkeypatch.setattr(cli_module, "WhisperRecordingController", lambda *args, **kwargs: controller)
+    controller.audio_service.input_route = "pipewire:mic-a"
+    monkeypatch.setattr(
+        cli_module, "WhisperRecordingController", lambda *args, **kwargs: controller
+    )
 
     inputs = iter(["", "", "quit"])
     monkeypatch.setattr("builtins.input", lambda *args: next(inputs))

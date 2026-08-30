@@ -58,6 +58,9 @@ whisper-cli = "whisper_app.cli:main"
 [tool.setuptools]
 package-dir = {"" = "src"}
 
+[tool.setuptools.package-data]
+whisper_app = ["recipes.json"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["whisper_app*"]

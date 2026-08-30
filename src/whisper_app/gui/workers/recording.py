@@ -42,8 +42,7 @@ class RecordingWorker(QObject):
             if transcription:
                 self.result.emit(transcription)
             else:
-                self.error.emit("No audio data was recorded")
-                self.status_update.emit("❌ No audio data was recorded")
+                self.status_update.emit("ℹ️ No speech was detected")
 
             self.stopped.emit()
             self.finished.emit()
